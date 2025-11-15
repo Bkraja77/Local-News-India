@@ -9,7 +9,7 @@ const firebaseConfig = {
   apiKey: "AIzaSyCcCSa8zpJfR52LU149VyTA5Of1NXdHFsk",
   authDomain: "local-news-india.firebaseapp.com",
   projectId: "local-news-india",
-  storageBucket: "local-news-india.firebasestorage.app",
+  storageBucket: "local-news-india.appspot.com",
   messagingSenderId: "472000282759",
   appId: "1:472000282759:web:c5c5a5ab157e237ccbb822"
 };
