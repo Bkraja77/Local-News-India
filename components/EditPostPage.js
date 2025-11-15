@@ -395,7 +395,7 @@ const EditPostPage: React.FC<EditPostPageProps> = ({ onBack, currentUser, postId
 
                      <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                           Thumbnail Image
+                           Thumbnail Image <span className="text-red-500">*</span>
                         </label>
                         <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md">
                              <div className="space-y-1 text-center">
