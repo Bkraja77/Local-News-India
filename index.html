@@ -1,153 +1,281 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Local News India</title>
-    <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        :root {
-            --bg-primary: #f3f4f6; /* gray-100 */
-            --bg-secondary: #ffffff; /* white */
-            --accent-primary: #3b82f6; /* blue-500 */
-            --accent-secondary: #6366f1; /* indigo-500 */
-            --accent-glow: rgba(59, 130, 246, 0.4);
-            --text-primary: #1f2937; /* gray-800 */
-            --text-secondary: #4b5563; /* gray-600 */
-            --card-bg: rgba(255, 255, 255, 0.6);
-            --card-border: rgba(0, 0, 0, 0.05);
-        }
+import React, { useState, useEffect, useMemo } from 'react';
+import { View, User, Post } from '../types';
+import Header from './Header';
+import PostCard from './PostCard';
+import Categories from './Categories';
+import LocationFilter from './LocationFilter';
+import { db, serverTimestamp, increment, firebase } from '../firebaseConfig';
+import ReportModal from './ReportModal';
 
-        body {
-            font-family: 'Poppins', sans-serif;
-            color: var(--text-primary);
-            background-color: var(--bg-primary);
-        }
-        
-        .material-symbols-outlined {
-            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-        }
-
-        .glass-card {
-            background: var(--card-bg);
-            backdrop-filter: blur(15px);
-            -webkit-backdrop-filter: blur(15px);
-            border-radius: 1rem;
-            border: 1px solid var(--card-border);
-            box-shadow: 0 4px 20px 0 rgba(0, 0, 0, 0.05);
-            transition: all 0.3s ease;
-        }
-
-        .glass-card:hover {
-            box-shadow: 0 8px 30px 0 rgba(0, 0, 0, 0.1);
-        }
-
-        .gradient-button {
-             background-image: linear-gradient(to right, var(--accent-primary) 0%, var(--accent-secondary) 51%, var(--accent-primary) 100%);
-             background-size: 200% auto;
-             transition: all 0.3s ease-in-out;
-             color: white;
-        }
-        .gradient-button:hover {
-            background-position: right center;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 15px 0 var(--accent-glow);
-        }
-
-        .gradient-text {
-            background: linear-gradient(to right, var(--accent-primary), var(--accent-secondary));
-            -webkit-background-clip: text;
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-        
-        .fade-in-up {
-            opacity: 0;
-            animation: fadeInUp 0.6s ease-out forwards;
-        }
-
-        @keyframes fadeInUp {
-            from {
-                opacity: 0;
-                transform: translateY(20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-        
-        /* Custom Scrollbar */
-        ::-webkit-scrollbar {
-            width: 8px;
-        }
-        ::-webkit-scrollbar-track {
-            background: #e5e7eb; /* gray-200 */
-        }
-        ::-webkit-scrollbar-thumb {
-            background: var(--accent-primary);
-            border-radius: 10px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #2563eb; /* blue-600 */
-        }
-
-        /* Custom utility for hiding scrollbar */
-        .scrollbar-hide::-webkit-scrollbar {
-            display: none;
-        }
-        .scrollbar-hide {
-            -ms-overflow-style: none;  /* IE and Edge */
-            scrollbar-width: none;  /* Firefox */
-        }
-
-        /* Chart.js light mode */
-        .chart-container {
-            position: relative;
-            height: 24rem; /* h-96 */
-            padding: 1.5rem; /* p-6 */
-            background: var(--card-bg);
-            backdrop-filter: blur(15px);
-            border-radius: 1rem;
-            border: 1px solid var(--card-border);
-        }
-        
-        /* Rich Text Editor Placeholder */
-        [contenteditable][placeholder]:empty:before {
-            content: attr(placeholder);
-            color: #6b7280; /* gray-500 */
-            pointer-events: none;
-            display: block; /* For cursor positioning */
-        }
-    </style>
-<script type="importmap">
-{
-  "imports": {
-    "react": "https://aistudiocdn.com/react@^19.2.0",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-    "react/": "https://aistudiocdn.com/react@^19.2.0/",
-    "firebase/app": "https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js",
-    "firebase/auth": "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js",
-    "firebase/firestore": "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js",
-    "firebase/storage": "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js",
-    "firebase/": "https://aistudiocdn.com/firebase@^12.5.0/",
-    "uuid": "https://aistudiocdn.com/uuid@^13.0.0",
-    "chart.js/": "https://aistudiocdn.com/chart.js@^4.5.1/",
-    "chart.js": "https://aistudiocdn.com/chart.js@^4.5.1",
-    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.28.0"
-  }
+interface HomePageProps {
+  onNavigate: (view: View) => void;
+  currentUser: User | null;
+  onLogin: () => void;
+  onLogout: () => void;
+  onViewPost: (postId: string) => void;
+  onViewUser: (userId: string) => void;
 }
-</script>
-<link rel="stylesheet" href="/index.css">
-</head>
-<body class="bg-gray-100">
-    <div id="root"></div>
-    <script type="module" src="/index.tsx"></script>
-</body>
-</html>
+
+const newsCategories = ['Latest', 'Politics', 'Crime', 'Sports', 'Entertainment', 'Business', 'Technology', 'Health', 'World', 'General'];
+
+const HomePage: React.FC<HomePageProps> = ({ onNavigate, currentUser, onLogin, onLogout, onViewPost, onViewUser }) => {
+    const [posts, setPosts] = useState<Post[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [reportingPost, setReportingPost] = useState<Post | null>(null);
+    const [followingList, setFollowingList] = useState<string[]>([]);
+    
+    // Filter states
+    const [selectedCategory, setSelectedCategory] = useState('Latest');
+    const [selectedState, setSelectedState] = useState('');
+    const [selectedDistrict, setSelectedDistrict] = useState('');
+    const [selectedBlock, setSelectedBlock] = useState('');
+    const [initialLocationSet, setInitialLocationSet] = useState(false);
+
+
+    useEffect(() => {
+        setLoading(true);
+        setError(null);
+
+        const postsQuery = db.collection("posts").orderBy("createdAt", "desc");
+        const unsubscribePosts = postsQuery.onSnapshot((snapshot) => {
+            const fetchedPosts = snapshot.docs.map(doc => {
+                const data = doc.data();
+                return {
+                    id: doc.id,
+                    title: data.title,
+                    content: data.content,
+                    thumbnailUrl: data.thumbnailUrl,
+                    authorId: data.authorId,
+                    authorName: data.authorName,
+                    authorProfilePicUrl: data.authorProfilePicUrl,
+                    viewCount: data.viewCount || 0,
+                    shareCount: data.shareCount || 0,
+                    category: data.category || 'General',
+                    createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : null,
+                    locationType: data.locationType || 'Overall',
+                    state: data.state || '',
+                    district: data.district || '',
+                    block: data.block || '',
+                } as Post;
+            });
+            setPosts(fetchedPosts);
+            setLoading(false);
+            setError(null);
+        }, (err) => {
+            console.error("Error fetching posts:", err.message);
+            setError("Could not load news feed. Please try again later.");
+            setLoading(false);
+        });
+
+        return () => unsubscribePosts();
+    }, []);
+
+    useEffect(() => {
+        if (currentUser) {
+            const followingRef = db.collection('users').doc(currentUser.uid).collection('following');
+            const unsubscribeFollowing = followingRef.onSnapshot((snapshot) => {
+                setFollowingList(snapshot.docs.map(doc => doc.id));
+            });
+            return () => unsubscribeFollowing();
+        } else {
+            setFollowingList([]);
+        }
+    }, [currentUser]);
+
+    const handleLocationReset = () => {
+        setSelectedState('');
+        setSelectedDistrict('');
+        setSelectedBlock('');
+    };
+
+    useEffect(() => {
+        // If a logged-in user has a preferred location and we haven't set the initial filter yet
+        if (currentUser && !initialLocationSet && currentUser.preferredState) {
+            setSelectedState(currentUser.preferredState);
+            // Only set district/block if they exist in the user's profile
+            if (currentUser.preferredDistrict) {
+                setSelectedDistrict(currentUser.preferredDistrict);
+            }
+            setInitialLocationSet(true); // Mark as set
+        } else if (!currentUser && initialLocationSet) {
+            // When user logs out, reset the flag so it can be set for the next user
+            setInitialLocationSet(false);
+            // Also reset filters to default
+            handleLocationReset();
+            setSelectedCategory('Latest');
+        }
+    }, [currentUser, initialLocationSet]);
+
+    const filteredPosts = useMemo(() => {
+        // 1. Filter by category
+        const categoryFiltered = (selectedCategory === 'Latest')
+            ? posts
+            : posts.filter(post => post.category === selectedCategory);
+
+        // 2. If no state is selected, return all posts from that category
+        if (!selectedState) {
+            return categoryFiltered;
+        }
+
+        // 3. If a state IS selected, apply location filters hierarchically
+        return categoryFiltered.filter(post => {
+            if (post.state !== selectedState) return false;
+            if (selectedDistrict && post.district !== selectedDistrict) return false;
+            if (selectedBlock && post.block !== selectedBlock) return false;
+            return true;
+        });
+    }, [posts, selectedCategory, selectedState, selectedDistrict, selectedBlock]);
+
+    const handleFollowToggle = async (targetUserId: string, targetUserName: string, targetUserProfilePicUrl: string) => {
+        if (!currentUser) {
+            onLogin();
+            return;
+        }
+
+        const currentUserRef = db.collection('users').doc(currentUser.uid);
+        const targetUserRef = db.collection('users').doc(targetUserId);
+
+        const followingRef = currentUserRef.collection('following').doc(targetUserId);
+        const followerRef = targetUserRef.collection('followers').doc(currentUser.uid);
+
+        const isFollowing = followingList.includes(targetUserId);
+
+        try {
+            const batch = db.batch();
+            if (isFollowing) {
+                batch.delete(followingRef);
+                batch.delete(followerRef);
+            } else {
+                batch.set(followingRef, { followedAt: serverTimestamp() });
+                batch.set(followerRef, { followedAt: serverTimestamp() });
+
+                // Add notification
+                const notificationRef = targetUserRef.collection('notifications').doc();
+                batch.set(notificationRef, {
+                    type: 'new_follower',
+                    fromUserId: currentUser.uid,
+                    fromUserName: currentUser.name,
+                    fromUserProfilePicUrl: currentUser.profilePicUrl,
+                    createdAt: serverTimestamp(),
+                    read: false
+                });
+            }
+            await batch.commit();
+        } catch (error) {
+            console.error("Error following/unfollowing user:", error);
+            alert("Action failed. Please try again.");
+        }
+    };
+    
+    const handleReport = (post: Post) => {
+        if (!currentUser) {
+            alert("You must be logged in to report a post.");
+            onLogin();
+            return;
+        }
+        setReportingPost(post);
+    };
+
+    const handleReportSuccess = () => {
+        setReportingPost(null);
+        onNavigate(View.Main);
+    };
+    
+    const handleCategorySelect = (category: string) => {
+        if (!currentUser && category !== 'Latest') {
+            onLogin();
+            return;
+        }
+        setSelectedCategory(category);
+    };
+
+    const handleStateSelect = (state: string) => {
+        if (!currentUser) {
+            onLogin();
+            return;
+        }
+        setSelectedState(state);
+        setSelectedDistrict('');
+        setSelectedBlock('');
+    };
+
+    const handleDistrictSelect = (district: string) => {
+        if (!currentUser) {
+            onLogin();
+            return;
+        }
+        setSelectedDistrict(district);
+        setSelectedBlock('');
+    };
+    
+    const handleBlockSelect = (block: string) => {
+        if (!currentUser) {
+            onLogin();
+            return;
+        }
+        setSelectedBlock(block);
+    };
+
+
+    return (
+        <div className="flex flex-col h-full bg-transparent">
+            <Header 
+                title="Local News India"
+                showSettingsButton
+                onSettings={() => onNavigate(View.Settings)}
+            />
+            <div className="sticky top-0 z-20">
+              <Categories 
+                  categories={newsCategories}
+                  selectedCategory={selectedCategory}
+                  onSelectCategory={handleCategorySelect}
+              />
+              <LocationFilter 
+                selectedState={selectedState}
+                setSelectedState={handleStateSelect}
+                selectedDistrict={selectedDistrict}
+                setSelectedDistrict={handleDistrictSelect}
+                selectedBlock={selectedBlock}
+                setSelectedBlock={handleBlockSelect}
+              />
+            </div>
+            <main className="flex-grow overflow-y-auto pb-20">
+                <div className="p-4 md:p-6 space-y-6">
+                    {loading && <p className="text-center text-gray-500">Loading news...</p>}
+                    {error && <p className="text-center text-red-500">{error}</p>}
+                    {!loading && filteredPosts.map((post, index) => (
+                        <div key={post.id} className="fade-in-up" style={{ animationDelay: `${index * 100}ms`}}>
+                            <PostCard 
+                                post={post} 
+                                currentUser={currentUser}
+                                onLogin={onLogin}
+                                onReport={handleReport}
+                                onViewPost={onViewPost}
+                                onViewUser={onViewUser}
+                                isFollowing={followingList.includes(post.authorId)}
+                                handleFollowToggle={handleFollowToggle}
+                            />
+                        </div>
+                    ))}
+                     {!loading && filteredPosts.length === 0 && !error && (
+                        <div className="text-center py-10 glass-card">
+                            <p className="text-gray-700">No posts found for the selected filters.</p>
+                            <p className="text-sm text-gray-500 mt-2">Try adjusting your category or location filters!</p>
+                        </div>
+                    )}
+                </div>
+            </main>
+            {reportingPost && currentUser && (
+                <ReportModal 
+                    post={reportingPost} 
+                    user={currentUser} 
+                    onClose={() => setReportingPost(null)}
+                    onSuccess={handleReportSuccess}
+                />
+            )}
+        </div>
+    );
+};
+
+export default HomePage;
