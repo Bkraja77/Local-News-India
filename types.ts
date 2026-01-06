@@ -37,6 +37,7 @@ export interface User {
   role: 'user' | 'admin';
   preferredState?: string;
   preferredDistrict?: string;
+  preferredBlock?: string;
 }
 
 export interface Post {

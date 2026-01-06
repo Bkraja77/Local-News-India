@@ -31,6 +31,7 @@ import ViewFeedbackPage from './components/ViewFeedbackPage';
 import { LanguageProvider } from './contexts/LanguageContext';
 import { ToastProvider, useToast } from './contexts/ToastContext';
 import Sidebar from './components/Sidebar';
+import { APP_LOGO_URL } from './utils/constants';
 
 // Sound effect for foreground notifications
 const NOTIFICATION_SOUND_URL = 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3'; // Gentle chime
@@ -44,6 +45,8 @@ const AppContent: React.FC = () => {
   const [selectedUserIdForAdmin, setSelectedUserIdForAdmin] = useState<string | null>(null);
   const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
+  const [shouldFocusComment, setShouldFocusComment] = useState(false);
+  const [userPageInitialTab, setUserPageInitialTab] = useState<'posts' | 'drafts'>('posts');
   const { showToast } = useToast();
 
   // Theme Initialization
@@ -92,6 +95,7 @@ const AppContent: React.FC = () => {
     const params = new URLSearchParams(window.location.search);
     const postId = params.get('postId');
     const userId = params.get('userId');
+    const page = params.get('page');
     
     if (postId) {
       setSelectedPostId(postId);
@@ -101,6 +105,20 @@ const AppContent: React.FC = () => {
         setSelectedUserId(userId);
         setCurrentView(View.PublicProfile);
         window.history.replaceState({ view: View.PublicProfile, userId }, '', window.location.href);
+    } else if (page) {
+        let initialView = View.Main;
+        if (page === 'about') initialView = View.About;
+        if (page === 'privacy') initialView = View.Privacy;
+        if (page === 'terms') initialView = View.Terms;
+        if (page === 'contact') initialView = View.Feedback;
+        if (page === 'login') initialView = View.Login;
+        
+        if (initialView !== View.Main) {
+            setCurrentView(initialView);
+            window.history.replaceState({ view: initialView }, '', window.location.href);
+        } else {
+             window.history.replaceState({ view: View.Main }, '', window.location.href);
+        }
     } else {
         // Default initial state
         window.history.replaceState({ view: View.Main }, '', window.location.href);
@@ -111,15 +129,18 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     const handlePopState = (event: PopStateEvent) => {
       if (event.state && event.state.view) {
-        const { view, postId, userId, adminUserId, draftId } = event.state;
+        const { view, postId, userId, adminUserId, draftId, initialTab } = event.state;
         
         // Restore context data if present
         if (postId) setSelectedPostId(postId);
         if (userId) setSelectedUserId(userId);
         if (adminUserId) setSelectedUserIdForAdmin(adminUserId);
         if (draftId) setSelectedDraftId(draftId); else setSelectedDraftId(null);
+        if (initialTab) setUserPageInitialTab(initialTab);
         
         setCurrentView(view);
+        // Reset focus comment when navigating via history
+        setShouldFocusComment(false);
       } else {
         // Fallback if no state is present (e.g. very start of history)
         setCurrentView(View.Main);
@@ -137,17 +158,29 @@ const AppContent: React.FC = () => {
             try {
                 const permission = await Notification.requestPermission();
                 if (permission === 'granted') {
-                    // Get the token
-                    // Using the VAPID key provided by the user
                     const token = await messaging.getToken({ vapidKey: 'BA5MxdxjaYCYjzpCkBaVfYImR71PxhYQpQhQ4CRPq1YzSvhzRLm3p1j7SzfjdojjDvkAeRWwCw21Ab3bCVjYU78' });
                     
                     if (token) {
-                        // Save token to Firestore so we can send notifications to this user
                         const userRef = db.collection('users').doc(currentUser.uid);
-                        // Using arrayUnion to support multiple devices per user
                         await userRef.update({
                             fcmTokens: firebase.firestore.FieldValue.arrayUnion(token)
                         });
+
+                        // Trigger a Good-looking "Permission Enabled" notification locally
+                        if ('serviceWorker' in navigator) {
+                            const registration = await navigator.serviceWorker.getRegistration();
+                            if (registration) {
+                                // Fix: Use 'as any' to bypass TS error on 'image' property which is valid in SW notifications
+                                registration.showNotification("Notifications Enabled!", {
+                                    body: "You'll now receive hyper-local news alerts from Public Tak directly in your notification scroll.",
+                                    icon: APP_LOGO_URL,
+                                    badge: APP_LOGO_URL,
+                                    image: 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&w=1000&q=80',
+                                    vibrate: [200, 100, 200],
+                                    tag: 'welcome-notif'
+                                } as any);
+                            }
+                        }
                     }
                 }
             } catch (error) {
@@ -159,24 +192,35 @@ const AppContent: React.FC = () => {
 
         // Handle foreground messages
         const unsubscribeOnMessage = messaging.onMessage((payload: any) => {
-            console.log('Foreground message received:', payload);
-            const { title, body } = payload.notification;
+            const { title, body, image } = payload.notification;
             
             // Play Sound
             const audio = new Audio(NOTIFICATION_SOUND_URL);
-            audio.play().catch(e => console.log("Audio play failed (interaction needed)", e));
+            audio.play().catch(e => console.log("Audio play failed", e));
 
             // Show Toast
             showToast(`${title}: ${body}`, "info");
-            
-            // Optional: You could show a custom in-app modal here
+
+            // Also show system notification if possible even in foreground for consistency
+            if (Notification.permission === 'granted') {
+                navigator.serviceWorker.getRegistration().then(reg => {
+                    // Fix: Use 'as any' to bypass TS error on 'image' property which is valid in SW notifications
+                    reg?.showNotification(title, {
+                        body: body,
+                        icon: APP_LOGO_URL,
+                        image: image || null,
+                        badge: APP_LOGO_URL,
+                        data: payload.data
+                    } as any);
+                });
+            }
         });
 
         return () => {
             if (unsubscribeOnMessage) unsubscribeOnMessage();
         }
     }
-  }, [currentUser]);
+  }, [currentUser, showToast]);
 
   useEffect(() => {
     let unsubscribeFirestore: (() => void) | null = null;
@@ -199,7 +243,6 @@ const AppContent: React.FC = () => {
 
         const userDocRef = db.collection('users').doc(firebaseUser.uid);
         
-        // Initial fetch to speed up UI
         userDocRef.get().then((doc) => {
              const defaultUsername = firebaseUser.email ? firebaseUser.email.split('@')[0] : `user${Date.now()}`;
              if(doc.exists) {
@@ -214,6 +257,7 @@ const AppContent: React.FC = () => {
                     role: userData?.role || 'user',
                     preferredState: userData?.preferredState || '',
                     preferredDistrict: userData?.preferredDistrict || '',
+                    preferredBlock: userData?.preferredBlock || '',
                 });
              }
         });
@@ -256,6 +300,7 @@ const AppContent: React.FC = () => {
                     role: userData.role || 'user',
                     preferredState: userData.preferredState || '',
                     preferredDistrict: userData.preferredDistrict || '',
+                    preferredBlock: userData.preferredBlock || '',
                 });
             } else {
                 setCurrentUser(null);
@@ -277,42 +322,40 @@ const AppContent: React.FC = () => {
     };
   }, []);
   
-  const navigateTo = (view: View, params: { postId?: string, userId?: string, adminUserId?: string, draftId?: string } = {}) => {
-    // Guards against Event objects being passed as 'view'
-    if (typeof view !== 'string') {
-        console.warn("navigateTo called with invalid view:", view);
-        return;
-    }
+  const navigateTo = (view: View, params: { postId?: string, userId?: string, adminUserId?: string, draftId?: string, focusComment?: boolean, initialTab?: 'posts' | 'drafts' } = {}) => {
+    if (typeof view !== 'string') return;
 
-    // Sanitize params to ensure no Event objects or circular structures are passed
     const safeParams: any = {};
     if (params && typeof params === 'object' && params !== null) {
-        // Explicitly check for Event-like properties to ignore the whole object if it's an event
-        if ('preventDefault' in params || 'target' in params || 'nativeEvent' in params) {
-             console.warn("navigateTo received an Event object as params. Ignoring params.");
-        } else {
-            // Explicitly copy only expected properties
+        if (!('preventDefault' in params || 'target' in params || 'nativeEvent' in params)) {
             if (params.postId && typeof params.postId === 'string') safeParams.postId = params.postId;
             if (params.userId && typeof params.userId === 'string') safeParams.userId = params.userId;
             if (params.adminUserId && typeof params.adminUserId === 'string') safeParams.adminUserId = params.adminUserId;
             if (params.draftId && typeof params.draftId === 'string') safeParams.draftId = params.draftId;
+            if (typeof params.focusComment === 'boolean') safeParams.focusComment = params.focusComment;
+            if (params.initialTab === 'posts' || params.initialTab === 'drafts') safeParams.initialTab = params.initialTab;
         }
     }
 
     setPreviousView(currentView);
     setCurrentView(view);
     
-    // Handle Draft State
     if (safeParams.draftId) {
         setSelectedDraftId(safeParams.draftId);
     } else if (view === View.CreatePost) {
-        // If navigating to create post without a specific draft ID (e.g. "New Post" button), clear selection
         setSelectedDraftId(null);
     }
 
-    // Construct URL and History State
+    if (safeParams.initialTab) {
+        setUserPageInitialTab(safeParams.initialTab);
+    } else if (view !== View.User) {
+        // Reset to default when moving away from User page if not explicitly set
+        setUserPageInitialTab('posts');
+    }
+
+    setShouldFocusComment(!!safeParams.focusComment);
+
     let url = window.location.pathname;
-    // We recreate the state object purely from primitives to ensure no circular references
     const state: any = { view, ...safeParams };
 
     if (view === View.Main) {
@@ -321,9 +364,18 @@ const AppContent: React.FC = () => {
         url = `?postId=${safeParams.postId}`;
     } else if (view === View.PublicProfile && safeParams.userId) {
         url = `?userId=${safeParams.userId}`;
+    } else if (view === View.About) {
+        url = '?page=about';
+    } else if (view === View.Privacy) {
+        url = '?page=privacy';
+    } else if (view === View.Terms) {
+        url = '?page=terms';
+    } else if (view === View.Feedback) {
+        url = '?page=contact';
+    } else if (view === View.Login) {
+        url = '?page=login';
     }
     
-    // Push new state to history
     window.history.pushState(state, '', url);
   };
   
@@ -381,6 +433,7 @@ const AppContent: React.FC = () => {
   const handleLogout = async () => {
     try {
       await auth.signOut();
+      showToast("Logged out successfully", "success");
       navigateTo(View.Main);
     } catch (error) {
       console.error("Error signing out: ", error);
@@ -417,7 +470,6 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="font-sans text-gray-800 bg-gray-100 h-screen flex overflow-hidden">
-        {/* Desktop Sidebar */}
         <Sidebar 
             onNavigate={navigateTo} 
             currentUser={currentUser} 
@@ -427,7 +479,6 @@ const AppContent: React.FC = () => {
             onLogin={handleLogin}
         />
 
-        {/* Main Content Area */}
         <div className="relative flex flex-col flex-1 h-full w-full overflow-hidden md:overflow-visible md:bg-gray-100">
             <div className="relative flex-1 w-full h-full overflow-hidden md:overflow-y-auto md:w-full md:flex md:flex-col">
                 
@@ -489,6 +540,7 @@ const AppContent: React.FC = () => {
                         currentUser={currentUser}
                         onLogin={handleLogin}
                         onLogout={handleLogout}
+                        unreadNotificationsCount={unreadNotificationsCount}
                     />
                 </PageWrapper>
                 
@@ -553,6 +605,7 @@ const AppContent: React.FC = () => {
                         onEditPost={handleEditPost}
                         onViewPost={handleViewPost}
                         onViewUser={handleViewUser}
+                        initialTab={userPageInitialTab}
                     />
                 </PageWrapper>
 
@@ -561,6 +614,7 @@ const AppContent: React.FC = () => {
                         onBack={handleBack}
                         currentUser={currentUser}
                         draftId={selectedDraftId}
+                        onNavigate={navigateTo}
                     />
                 </PageWrapper>
 
@@ -585,12 +639,9 @@ const AppContent: React.FC = () => {
                 </PageWrapper>
                 
                 <PageWrapper view={View.PostDetail}>
-                    {/* Only render PostDetailPage if it is the current view. 
-                        This ensures it unmounts when navigating away (like back to home)
-                        and remounts when navigating to it (resetting state and triggering
-                        the view count effect on every visit). */}
                     {selectedPostId && currentView === View.PostDetail && (
                         <PostDetailPage
+                            key={selectedPostId}
                             postId={selectedPostId}
                             currentUser={currentUser}
                             onBack={handleBack}
@@ -599,6 +650,7 @@ const AppContent: React.FC = () => {
                             onViewUser={handleViewUser}
                             onViewPost={handleViewPost}
                             onEditPost={handleEditPost}
+                            focusComment={shouldFocusComment}
                         />
                     )}
                 </PageWrapper>
@@ -648,9 +700,9 @@ const AppContent: React.FC = () => {
 const App: React.FC = () => {
   return (
     <LanguageProvider>
-      <ToastProvider>
+    <ToastProvider>
         <AppContent />
-      </ToastProvider>
+    </ToastProvider>
     </LanguageProvider>
   );
 };

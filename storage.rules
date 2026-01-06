@@ -1,1 +1,43 @@
-��^��ޮȨ�
+rules_version = '2';
+
+// Firebase Storage Security Rules
+// 'allow read: if true' बाहरी लिंक्स (WhatsApp/Facebook) को इमेज दिखाने की अनुमति देता है।
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // 1. प्रोफाइल फोटो: कोई भी देख सकता है, केवल मालिक अपलोड कर सकता है (Max 5MB)
+    match /profile-pics/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == userId
+                   && request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    // 2. पोस्ट थंबनेल्स: कोई भी देख सकता है, लॉगिन यूज़र अपलोड कर सकता है (Max 10MB)
+    match /thumbnails/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null
+                   && request.resource.size < 10 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    // 3. पोस्ट के अंदर की इमेजेस: कोई भी देख सकता है, लॉगिन यूज़र अपलोड कर सकता है (Max 5MB)
+    match /post-images/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null
+                   && request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    // 4. ड्राफ्ट्स (Drafts): केवल यूज़र खुद देख और बदल सकता है
+    match /users/{userId}/drafts/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // 5. डिफ़ॉल्ट नियम (अन्य सभी फाइलों के लिए)
+    match /{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+  }
+}

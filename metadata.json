@@ -1,5 +1,9 @@
 {
   "name": "Public Tak",
   "description": "Your trusted source for local news and updates from across India.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
 }

@@ -1,21 +1,84 @@
+
 {
-  "short_name": "Public Tak",
   "name": "Public Tak",
-  "description": "Your trusted source for local news and updates from across India.",
+  "short_name": "Public Tak",
+  "description": "Your trusted source for local news, breaking updates, politics, sports, and entertainment from across India.",
+  "id": "/",
+  "start_url": "/?source=pwa",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#dc2626",
+  "scope": "/",
+  "categories": ["news", "magazines", "social"],
+  "lang": "en",
+  "dir": "ltr",
   "icons": [
     {
-      "src": "/icon-192.svg",
-      "type": "image/svg+xml",
-      "sizes": "192x192"
+      "src": "/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any"
     },
     {
-      "src": "/icon-512.svg",
-      "type": "image/svg+xml",
-      "sizes": "512x512"
+      "src": "/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
     }
   ],
-  "start_url": "/",
-  "display": "standalone",
-  "theme_color": "#dc2626",
-  "background_color": "#f3f4f6"
+  "screenshots": [
+    {
+      "src": "https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&w=1000&q=80",
+      "sizes": "1000x2000",
+      "type": "image/jpeg",
+      "form_factor": "narrow",
+      "label": "Latest Hyper-local News"
+    },
+    {
+      "src": "https://images.unsplash.com/photo-1495020689067-958852a7765e?auto=format&fit=crop&w=2000&q=80",
+      "sizes": "2000x1200",
+      "type": "image/jpeg",
+      "form_factor": "wide",
+      "label": "Dashboard View"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Create New Post",
+      "short_name": "New Post",
+      "description": "Share news from your area",
+      "url": "/?page=createPost",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "My Profile",
+      "short_name": "Profile",
+      "url": "/?page=user",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ],
+  "share_target": {
+    "action": "/?source=share-target",
+    "method": "GET",
+    "enctype": "application/x-www-form-urlencoded",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  },
+  "prefer_related_applications": false
 }

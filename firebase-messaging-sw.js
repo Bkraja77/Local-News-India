@@ -15,26 +15,35 @@ firebase.initializeApp(firebaseConfig);
 
 const messaging = firebase.messaging();
 
-// Handle background messages
+/**
+ * Handle background messages.
+ * Note: Custom sounds are not supported in the standard showNotification API 
+ * for background service workers in most browsers for anti-spam reasons.
+ * However, we use vibrations and high-quality images to ensure visibility.
+ */
 messaging.onBackgroundMessage((payload) => {
   console.log('[firebase-messaging-sw.js] Received background message ', payload);
   
-  const notificationTitle = payload.notification.title;
+  const notificationTitle = payload.notification.title || "New News Update";
   const notificationOptions = {
-    body: payload.notification.body,
-    icon: '/icon-192.svg', // Main app icon
-    badge: '/icon-192.svg', // Small monochrome icon for status bar (Android)
-    image: payload.notification.image || null, // Rich media image (BigPicture style)
-    vibrate: [200, 100, 200, 100, 200], // Custom vibration pattern
-    tag: 'public-tak-news', // Collapse similar notifications
-    renotify: true, // Play sound/vibrate even if replacing an old notification with same tag
+    body: payload.notification.body || "Click to read the latest updates on Public Tak.",
+    icon: '/icon-192.png', 
+    badge: '/icon-192.png', // Monochrome icon for Android status bar
+    image: payload.notification.image || payload.data?.image || null, // Large image for drawer
+    vibrate: [300, 100, 300, 100, 400], // Distinctive news vibration pattern
+    tag: 'public-tak-news-alert',
+    renotify: true,
     data: {
-        url: payload.data?.url || '/'
+        url: payload.data?.url || (payload.data?.postId ? `/?postId=${payload.data.postId}` : '/')
     },
     actions: [
         {
             action: 'open',
-            title: 'Read Now'
+            title: 'Read News'
+        },
+        {
+            action: 'close',
+            title: 'Dismiss'
         }
     ]
   };
@@ -43,20 +52,29 @@ messaging.onBackgroundMessage((payload) => {
 });
 
 self.addEventListener('notificationclick', function(event) {
+  if (event.action === 'close') {
+    event.notification.close();
+    return;
+  }
+
   event.notification.close();
-  // Open the URL sent in the data payload
   const urlToOpen = event.notification.data.url || '/';
   
   event.waitUntil(
     clients.matchAll({type: 'window', includeUncontrolled: true}).then(windowClients => {
-        // Check if there is already a window/tab open with the target URL
+        // Try to find an existing window and focus it
         for (let i = 0; i < windowClients.length; i++) {
             const client = windowClients[i];
-            if (client.url.includes(urlToOpen) && 'focus' in client) {
-                return client.focus();
+            if (client.url.includes(self.location.origin) && 'focus' in client) {
+                // If it's the same URL, focus it. If different, navigate and focus.
+                if (client.url === urlToOpen) {
+                    return client.focus();
+                } else {
+                    return client.navigate(urlToOpen).then(c => c.focus());
+                }
             }
         }
-        // If not, open a new window/tab and focus it
+        // If no window found, open a new one
         if (clients.openWindow) {
             return clients.openWindow(urlToOpen);
         }

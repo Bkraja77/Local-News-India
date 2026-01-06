@@ -1,25 +1,27 @@
 {
   "name": "public-tak",
-  "private": true,
-  "version": "0.0.0",
-  "type": "module",
+  "version": "1.0.0",
+  "description": "Public Tak Local News App",
+  "main": "index.tsx",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "start": "npx serve .",
+    "build": "if exist www rd /s /q www && mkdir www && xcopy /E /Y /I components www\\components && xcopy /E /Y /I contexts www\\contexts && xcopy /E /Y /I data www\\data && xcopy /E /Y /I utils www\\utils && copy /Y index.html www\\ && copy /Y index.tsx www\\ && copy /Y manifest.json www\\ && (copy /Y *.png www\\ || dir) && (copy /Y *.js www\\ || dir) && (copy /Y *.rules www\\ || dir)",
+    "cap:sync": "npm run build && npx cap sync",
+    "cap:open:android": "npx cap open android",
+    "cap:add:android": "npx cap add android"
   },
   "dependencies": {
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "firebase": "^12.5.0",
-    "uuid": "^13.0.0",
-    "chart.js": "^4.5.1",
-    "@google/genai": "^1.28.0"
-  },
-  "devDependencies": {
-    "@types/node": "^22.14.0",
-    "@vitejs/plugin-react": "^5.0.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "@capacitor/android": "^6.0.0",
+    "@capacitor/cli": "^6.0.0",
+    "@capacitor/core": "^6.0.0",
+    "@capacitor/app": "^6.0.0",
+    "@capacitor/haptics": "^6.0.0",
+    "@capacitor/keyboard": "^6.0.0",
+    "@capacitor/status-bar": "^6.0.0",
+    "@capacitor/share": "^6.0.0",
+    "@capacitor/device": "^6.0.0",
+    "@capacitor/network": "^6.0.0",
+    "@capacitor/geolocation": "^6.0.0",
+    "@capacitor/camera": "^6.0.0"
   }
 }
