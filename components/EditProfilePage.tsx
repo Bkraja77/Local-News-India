@@ -208,15 +208,22 @@ const EditProfilePage: React.FC<EditProfilePageProps> = ({ onBack, currentUser, 
                 };
     
                 try {
+                    // Update Articles (Posts)
                     const postsQuery = db.collection('posts').where('authorId', '==', currentUser.uid);
                     const postsSnapshot = await postsQuery.get();
                     await commitInBatches(postsSnapshot, denormalizedUpdateData);
+
+                    // Update Videos (This ensures the Videos Page reflects the changes)
+                    const videosQuery = db.collection('videos').where('authorId', '==', currentUser.uid);
+                    const videosSnapshot = await videosQuery.get();
+                    await commitInBatches(videosSnapshot, denormalizedUpdateData);
     
+                    // Update Comments (Universal update across all posts and videos)
                     const commentsQuery = db.collectionGroup('comments').where('authorId', '==', currentUser.uid);
                     const commentsSnapshot = await commentsQuery.get();
                     await commitInBatches(commentsSnapshot, denormalizedUpdateData);
                     
-                    console.log("Background synchronization of posts and comments completed successfully.");
+                    console.log("Background synchronization of posts, videos, and comments completed successfully.");
                 } catch (syncError: any) {
                      if (syncError.code === 'failed-precondition') {
                          console.error("BACKGROUND SYNC FAILED: A composite index is required. Check the developer console for a link to create it.");

@@ -5,7 +5,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { APP_LOGO_URL } from '../utils/constants';
 
 interface SidebarProps {
-  onNavigate: (view: View) => void;
+  onNavigate: (view: View, params?: any) => void;
   currentUser: User | null;
   currentView: View;
   unreadCount: number;
@@ -18,6 +18,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onNavigate, currentUser, currentView,
 
   const navItems = [
     { view: View.Main, icon: 'home', label: t('home') },
+    { view: View.Videos, icon: 'play_circle', label: 'Videos', protected: true },
     { view: View.Search, icon: 'search', label: t('search') },
     { view: View.Notifications, icon: 'notifications', label: t('alerts'), badge: unreadCount },
     { view: View.User, icon: 'person', label: t('profile'), protected: true },

@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, User } from './types';
 import HomePage from './components/HomePage';
 import SettingsPage from './components/SettingsPage';
@@ -11,6 +11,9 @@ import AdminPage from './components/AdminPage';
 import UserPage from './components/UserPage';
 import LoginPage from './components/LoginPage';
 import CreatePostPage from './components/CreatePostPage';
+import CreateVideoPage from './components/CreateVideoPage';
+import CreatePostChoicePage from './components/CreatePostChoicePage';
+import VideosPage from './components/VideosPage';
 import EditPostPage from './components/EditPostPage';
 import EditProfilePage from './components/EditProfilePage';
 import ManageUsersPage from './components/ManageUsersPage';
@@ -33,678 +36,173 @@ import { ToastProvider, useToast } from './contexts/ToastContext';
 import Sidebar from './components/Sidebar';
 import { APP_LOGO_URL } from './utils/constants';
 
-// Sound effect for foreground notifications
-const NOTIFICATION_SOUND_URL = 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3'; // Gentle chime
-
 const AppContent: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>(View.Main);
-  const [previousView, setPreviousView] = useState<View | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
+  const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [selectedUserIdForAdmin, setSelectedUserIdForAdmin] = useState<string | null>(null);
   const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
   const [shouldFocusComment, setShouldFocusComment] = useState(false);
-  const [userPageInitialTab, setUserPageInitialTab] = useState<'posts' | 'drafts'>('posts');
+  const [userPageInitialTab, setUserPageInitialTab] = useState<'posts' | 'videos' | 'drafts'>('posts');
+  const currentViewRef = useRef(currentView);
   const { showToast } = useToast();
 
-  // Theme Initialization
   useEffect(() => {
-    // Inject Dark Mode Styles
-    const style = document.createElement('style');
-    style.innerHTML = `
-      body.dark-mode {
-        --bg-primary: #111827;
-        --bg-secondary: #1f2937;
-        --text-primary: #f3f4f6;
-        --text-secondary: #9ca3af;
-        --card-bg: rgba(31, 41, 55, 0.95);
-        --card-border: rgba(255, 255, 255, 0.1);
-      }
-      body.dark-mode .glass-card {
-        background: var(--card-bg);
-        border: 1px solid var(--card-border);
-      }
-      body.dark-mode input, body.dark-mode textarea, body.dark-mode select {
-        background-color: #374151;
-        border-color: #4b5563;
-        color: #f3f4f6;
-      }
-      body.dark-mode .text-gray-800 { color: #f3f4f6; }
-      body.dark-mode .text-gray-700 { color: #e5e7eb; }
-      body.dark-mode .text-gray-600 { color: #d1d5db; }
-      body.dark-mode .text-gray-500 { color: #9ca3af; }
-      body.dark-mode .bg-white { background-color: #1f2937; }
-      body.dark-mode .bg-gray-100 { background-color: #111827; }
-      body.dark-mode .bg-gray-50 { background-color: #374151; }
-      body.dark-mode .border-gray-200 { border-color: #374151; }
-      body.dark-mode .border-gray-300 { border-color: #4b5563; }
-    `;
-    document.head.appendChild(style);
+    currentViewRef.current = currentView;
+  }, [currentView]);
 
-    // Apply saved theme
+  useEffect(() => {
     const savedTheme = localStorage.getItem('theme');
-    if (savedTheme === 'dark') {
-      document.body.classList.add('dark-mode');
-    }
+    if (savedTheme === 'dark') document.body.classList.add('dark-mode');
   }, []);
 
-  // Deep Link & History Init Handler
+  // Handle Initial Deep Links from URL
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    const videoId = params.get('videoId');
     const postId = params.get('postId');
     const userId = params.get('userId');
-    const page = params.get('page');
-    
-    if (postId) {
-      setSelectedPostId(postId);
-      setCurrentView(View.PostDetail);
-      window.history.replaceState({ view: View.PostDetail, postId }, '', window.location.href);
+
+    if (videoId) {
+      navigateTo(View.Videos, { videoId });
+    } else if (postId) {
+      navigateTo(View.PostDetail, { postId });
     } else if (userId) {
-        setSelectedUserId(userId);
-        setCurrentView(View.PublicProfile);
-        window.history.replaceState({ view: View.PublicProfile, userId }, '', window.location.href);
-    } else if (page) {
-        let initialView = View.Main;
-        if (page === 'about') initialView = View.About;
-        if (page === 'privacy') initialView = View.Privacy;
-        if (page === 'terms') initialView = View.Terms;
-        if (page === 'contact') initialView = View.Feedback;
-        if (page === 'login') initialView = View.Login;
-        
-        if (initialView !== View.Main) {
-            setCurrentView(initialView);
-            window.history.replaceState({ view: initialView }, '', window.location.href);
-        } else {
-             window.history.replaceState({ view: View.Main }, '', window.location.href);
-        }
-    } else {
-        // Default initial state
-        window.history.replaceState({ view: View.Main }, '', window.location.href);
+      navigateTo(View.PublicProfile, { userId });
     }
   }, []);
 
-  // Back Button / PopState Listener
   useEffect(() => {
     const handlePopState = (event: PopStateEvent) => {
       if (event.state && event.state.view) {
-        const { view, postId, userId, adminUserId, draftId, initialTab } = event.state;
-        
-        // Restore context data if present
+        const { view, postId, userId, adminUserId, draftId, initialTab, videoId } = event.state;
         if (postId) setSelectedPostId(postId);
         if (userId) setSelectedUserId(userId);
+        if (videoId) setSelectedVideoId(videoId);
         if (adminUserId) setSelectedUserIdForAdmin(adminUserId);
         if (draftId) setSelectedDraftId(draftId); else setSelectedDraftId(null);
         if (initialTab) setUserPageInitialTab(initialTab);
-        
         setCurrentView(view);
-        // Reset focus comment when navigating via history
         setShouldFocusComment(false);
-      } else {
-        // Fallback if no state is present (e.g. very start of history)
-        setCurrentView(View.Main);
-      }
+      } else setCurrentView(View.Main);
     };
-
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // --- Push Notification Setup ---
   useEffect(() => {
-    if (currentUser && messaging) {
-        const requestPermission = async () => {
-            try {
-                const permission = await Notification.requestPermission();
-                if (permission === 'granted') {
-                    const token = await messaging.getToken({ vapidKey: 'BA5MxdxjaYCYjzpCkBaVfYImR71PxhYQpQhQ4CRPq1YzSvhzRLm3p1j7SzfjdojjDvkAeRWwCw21Ab3bCVjYU78' });
-                    
-                    if (token) {
-                        const userRef = db.collection('users').doc(currentUser.uid);
-                        await userRef.update({
-                            fcmTokens: firebase.firestore.FieldValue.arrayUnion(token)
-                        });
-
-                        // Trigger a Good-looking "Permission Enabled" notification locally
-                        if ('serviceWorker' in navigator) {
-                            const registration = await navigator.serviceWorker.getRegistration();
-                            if (registration) {
-                                // Fix: Use 'as any' to bypass TS error on 'image' property which is valid in SW notifications
-                                registration.showNotification("Notifications Enabled!", {
-                                    body: "You'll now receive hyper-local news alerts from Public Tak directly in your notification scroll.",
-                                    icon: APP_LOGO_URL,
-                                    badge: APP_LOGO_URL,
-                                    image: 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&w=1000&q=80',
-                                    vibrate: [200, 100, 200],
-                                    tag: 'welcome-notif'
-                                } as any);
-                            }
-                        }
-                    }
-                }
-            } catch (error) {
-                console.error("Notification permission error:", error);
-            }
-        };
-
-        requestPermission();
-
-        // Handle foreground messages
-        const unsubscribeOnMessage = messaging.onMessage((payload: any) => {
-            const { title, body, image } = payload.notification;
-            
-            // Play Sound
-            const audio = new Audio(NOTIFICATION_SOUND_URL);
-            audio.play().catch(e => console.log("Audio play failed", e));
-
-            // Show Toast
-            showToast(`${title}: ${body}`, "info");
-
-            // Also show system notification if possible even in foreground for consistency
-            if (Notification.permission === 'granted') {
-                navigator.serviceWorker.getRegistration().then(reg => {
-                    // Fix: Use 'as any' to bypass TS error on 'image' property which is valid in SW notifications
-                    reg?.showNotification(title, {
-                        body: body,
-                        icon: APP_LOGO_URL,
-                        image: image || null,
-                        badge: APP_LOGO_URL,
-                        data: payload.data
-                    } as any);
-                });
-            }
-        });
-
-        return () => {
-            if (unsubscribeOnMessage) unsubscribeOnMessage();
-        }
-    }
-  }, [currentUser, showToast]);
-
-  useEffect(() => {
-    let unsubscribeFirestore: (() => void) | null = null;
-
-    const unsubscribeAuth = auth.onAuthStateChanged(async (firebaseUser) => {
-      if (unsubscribeFirestore) {
-        unsubscribeFirestore();
-        unsubscribeFirestore = null;
-      }
-
+    const unsubAuth = auth.onAuthStateChanged(async (firebaseUser) => {
       if (firebaseUser) {
-        const isEmailPasswordProvider = firebaseUser.providerData.some(
-          (provider) => provider.providerId === 'password'
-        );
-
-        if (isEmailPasswordProvider && !firebaseUser.emailVerified) {
-          await auth.signOut();
-          return;
-        }
-
         const userDocRef = db.collection('users').doc(firebaseUser.uid);
-        
-        userDocRef.get().then((doc) => {
-             const defaultUsername = firebaseUser.email ? firebaseUser.email.split('@')[0] : `user${Date.now()}`;
-             if(doc.exists) {
+        userDocRef.onSnapshot((doc) => {
+            if(doc.exists) {
                  const userData = doc.data();
-                 setCurrentUser({
+                 const userObj: User = {
                     uid: firebaseUser.uid,
                     name: userData?.name || firebaseUser.displayName,
-                    username: userData?.username || defaultUsername,
+                    username: userData?.username || 'user',
                     bio: userData?.bio || '',
                     email: firebaseUser.email,
-                    profilePicUrl: userData?.profilePicUrl || firebaseUser.photoURL || `https://api.dicebear.com/8.x/identicon/svg?seed=${encodeURIComponent(firebaseUser.email || firebaseUser.uid)}`,
+                    profilePicUrl: userData?.profilePicUrl || firebaseUser.photoURL || `https://api.dicebear.com/8.x/identicon/svg?seed=${firebaseUser.uid}`,
                     role: userData?.role || 'user',
                     preferredState: userData?.preferredState || '',
                     preferredDistrict: userData?.preferredDistrict || '',
                     preferredBlock: userData?.preferredBlock || '',
-                });
-             }
-        });
-
-        try {
-            const userDocSnap = await userDocRef.get();
-            const isAdmin = firebaseUser.email === 'bikash512singh@gmail.com';
-            
-            if (!userDocSnap.exists) {
-                const username = firebaseUser.email ? firebaseUser.email.split('@')[0] : `user${Date.now()}`;
-                await userDocRef.set({
-                    uid: firebaseUser.uid,
-                    name: firebaseUser.displayName || 'New User',
-                    email: firebaseUser.email,
-                    username: username,
-                    bio: '',
-                    profilePicUrl: firebaseUser.photoURL || `https://api.dicebear.com/8.x/identicon/svg?seed=${encodeURIComponent(firebaseUser.email || firebaseUser.uid)}`,
-                    role: isAdmin ? 'admin' : 'user',
-                    createdAt: serverTimestamp(),
-                    isPublic: true,
-                });
-            } else if (isAdmin && userDocSnap.data()?.role !== 'admin') {
-                await userDocRef.update({ role: 'admin' });
+                };
+                setCurrentUser(userObj);
+                
+                // AUTOMATIC REDIRECT ON LOGIN
+                if (currentViewRef.current === View.Login) {
+                    navigateTo(View.Main);
+                }
             }
-        } catch (error) {
-            console.error("Error ensuring user document exists:", error);
-        }
-
-        unsubscribeFirestore = userDocRef.onSnapshot((userDocSnap) => {
-            const defaultUsername = firebaseUser.email ? firebaseUser.email.split('@')[0] : `user${Date.now()}`;
-            if (userDocSnap.exists) {
-                const userData = userDocSnap.data();
-                setCurrentUser({
-                    uid: firebaseUser.uid,
-                    name: userData.name || firebaseUser.displayName,
-                    username: userData.username || defaultUsername,
-                    bio: userData.bio || '',
-                    email: firebaseUser.email,
-                    profilePicUrl: userData.profilePicUrl || firebaseUser.photoURL || `https://api.dicebear.com/8.x/identicon/svg?seed=${encodeURIComponent(firebaseUser.email || firebaseUser.uid)}`,
-                    role: userData.role || 'user',
-                    preferredState: userData.preferredState || '',
-                    preferredDistrict: userData.preferredDistrict || '',
-                    preferredBlock: userData.preferredBlock || '',
-                });
-            } else {
-                setCurrentUser(null);
-            }
-        }, (error) => {
-            console.error("Error listening to user document:", error);
         });
-
       } else {
-        setCurrentUser(null);
+          setCurrentUser(null);
+          // If user was on a protected page, kick to home
+          if (currentViewRef.current === View.User || currentViewRef.current === View.Admin || currentViewRef.current === View.EditProfile) {
+              navigateTo(View.Main);
+          }
       }
     });
-
-    return () => {
-      unsubscribeAuth();
-      if (unsubscribeFirestore) {
-        unsubscribeFirestore();
-      }
-    };
+    return () => unsubAuth();
   }, []);
   
-  const navigateTo = (view: View, params: { postId?: string, userId?: string, adminUserId?: string, draftId?: string, focusComment?: boolean, initialTab?: 'posts' | 'drafts' } = {}) => {
-    if (typeof view !== 'string') return;
-
-    const safeParams: any = {};
-    if (params && typeof params === 'object' && params !== null) {
-        if (!('preventDefault' in params || 'target' in params || 'nativeEvent' in params)) {
-            if (params.postId && typeof params.postId === 'string') safeParams.postId = params.postId;
-            if (params.userId && typeof params.userId === 'string') safeParams.userId = params.userId;
-            if (params.adminUserId && typeof params.adminUserId === 'string') safeParams.adminUserId = params.adminUserId;
-            if (params.draftId && typeof params.draftId === 'string') safeParams.draftId = params.draftId;
-            if (typeof params.focusComment === 'boolean') safeParams.focusComment = params.focusComment;
-            if (params.initialTab === 'posts' || params.initialTab === 'drafts') safeParams.initialTab = params.initialTab;
-        }
-    }
-
-    setPreviousView(currentView);
+  const navigateTo = (view: View, params: any = {}) => {
     setCurrentView(view);
-    
-    if (safeParams.draftId) {
-        setSelectedDraftId(safeParams.draftId);
-    } else if (view === View.CreatePost) {
-        setSelectedDraftId(null);
-    }
+    if (params.postId) setSelectedPostId(params.postId);
+    if (params.userId) setSelectedUserId(params.userId);
+    if (params.videoId) setSelectedVideoId(params.videoId); else setSelectedVideoId(null);
+    if (params.adminUserId) setSelectedUserIdForAdmin(params.adminUserId);
+    if (params.draftId) setSelectedDraftId(params.draftId); else setSelectedDraftId(null);
+    if (params.initialTab) setUserPageInitialTab(params.initialTab);
+    setShouldFocusComment(!!params.focusComment);
 
-    if (safeParams.initialTab) {
-        setUserPageInitialTab(safeParams.initialTab);
-    } else if (view !== View.User) {
-        // Reset to default when moving away from User page if not explicitly set
-        setUserPageInitialTab('posts');
-    }
+    // Build URL with params if they exist to support refresh
+    const url = new URL(window.location.origin);
+    if (params.videoId) url.searchParams.set('videoId', params.videoId);
+    if (params.postId) url.searchParams.set('postId', params.postId);
+    if (params.userId) url.searchParams.set('userId', params.userId);
 
-    setShouldFocusComment(!!safeParams.focusComment);
-
-    let url = window.location.pathname;
-    const state: any = { view, ...safeParams };
-
-    if (view === View.Main) {
-        url = '/';
-    } else if (view === View.PostDetail && safeParams.postId) {
-        url = `?postId=${safeParams.postId}`;
-    } else if (view === View.PublicProfile && safeParams.userId) {
-        url = `?userId=${safeParams.userId}`;
-    } else if (view === View.About) {
-        url = '?page=about';
-    } else if (view === View.Privacy) {
-        url = '?page=privacy';
-    } else if (view === View.Terms) {
-        url = '?page=terms';
-    } else if (view === View.Feedback) {
-        url = '?page=contact';
-    } else if (view === View.Login) {
-        url = '?page=login';
-    }
-    
-    window.history.pushState(state, '', url);
-  };
-  
-  useEffect(() => {
-    if (currentUser && currentView === View.Login) {
-      navigateTo(View.Main);
-    }
-  }, [currentUser, currentView]);
-
-  useEffect(() => {
-    if (currentUser) {
-      const notificationsRef = db.collection('users').doc(currentUser.uid).collection('notifications');
-      const q = notificationsRef.where('read', '==', false);
-      const unsubscribe = q.onSnapshot((snapshot) => {
-        setUnreadNotificationsCount(snapshot.size);
-      });
-      return () => unsubscribe();
-    } else {
-      setUnreadNotificationsCount(0);
-    }
-  }, [currentUser]);
-
-  const handleEditPost = (postId: string) => {
-    setSelectedPostId(postId);
-    navigateTo(View.EditPost, { postId });
-  };
-  
-  const handleViewPost = (postId: string) => {
-    setSelectedPostId(postId);
-    navigateTo(View.PostDetail, { postId });
-  };
-
-  const handleViewUser = (userId: string) => {
-    if (currentUser && userId === currentUser.uid) {
-        navigateTo(View.User);
-    } else {
-        setSelectedUserId(userId);
-        navigateTo(View.PublicProfile, { userId });
-    }
-  };
-
-  const handleAdminEditUser = (userId: string) => {
-    setSelectedUserIdForAdmin(userId);
-    navigateTo(View.AdminEditUser, { adminUserId: userId });
-  };
-
-  const handleLogin = () => {
-    navigateTo(View.Login);
-  };
-
-  const handleLoginSuccess = () => {
-    navigateTo(View.Main);
+    window.history.pushState({ view, ...params }, '', url.toString());
   };
 
   const handleLogout = async () => {
-    try {
-      await auth.signOut();
-      showToast("Logged out successfully", "success");
-      navigateTo(View.Main);
-    } catch (error) {
-      console.error("Error signing out: ", error);
-    }
+      try {
+          await auth.signOut();
+          showToast("Logged out successfully", "success");
+          navigateTo(View.Main);
+      } catch (err) {
+          showToast("Logout failed", "error");
+      }
   };
 
-  const handleProfileUpdate = (updatedData: Partial<User>) => {
-    if (currentUser) {
-        setCurrentUser(prevUser => ({
-            ...prevUser!,
-            ...updatedData
-        }));
-    }
-  };
-
-  const handleBack = () => {
-      window.history.back();
-  };
-
-  const PageWrapper: React.FC<{ view: View, isMain?: boolean, children: React.ReactNode }> = ({ view, isMain = false, children }) => {
-    const isActive = currentView === view;
-    
-    return (
-      <div className={`
-        w-full h-full flex flex-col
-        ${isActive ? 'flex' : 'hidden'}
-      `}>
-        <div className="w-full h-full md:h-auto">
-           {children}
-        </div>
-      </div>
-    );
-  };
+  const PageWrapper: React.FC<{ view: View, children: React.ReactNode }> = ({ view, children }) => (
+    <div className={`w-full h-full flex flex-col ${currentView === view ? 'flex' : 'hidden'}`}>{children}</div>
+  );
 
   return (
     <div className="font-sans text-gray-800 bg-gray-100 h-screen flex overflow-hidden">
-        <Sidebar 
-            onNavigate={navigateTo} 
-            currentUser={currentUser} 
-            currentView={currentView} 
-            unreadCount={unreadNotificationsCount}
-            onLogout={handleLogout}
-            onLogin={handleLogin}
-        />
-
-        <div className="relative flex flex-col flex-1 h-full w-full overflow-hidden md:overflow-visible md:bg-gray-100">
-            <div className="relative flex-1 w-full h-full overflow-hidden md:overflow-y-auto md:w-full md:flex md:flex-col">
-                
-                <PageWrapper view={View.Main} isMain={true}>
-                    <HomePage 
-                      onNavigate={navigateTo} 
-                      currentUser={currentUser}
-                      onLogin={handleLogin}
-                      onLogout={handleLogout}
-                      onViewPost={handleViewPost}
-                      onViewUser={handleViewUser}
-                      onEditPost={handleEditPost}
-                    />
-                </PageWrapper>
-
-                <PageWrapper view={View.Search}>
-                    <SearchPage 
-                        onNavigate={navigateTo} 
-                        onViewPost={handleViewPost} 
-                        currentUser={currentUser}
-                        onViewUser={handleViewUser}
-                    />
-                </PageWrapper>
-
-                <PageWrapper view={View.Settings}>
-                    <SettingsPage 
-                      onBack={handleBack} 
-                      onNavigate={navigateTo} 
-                      currentUser={currentUser}
-                      onLogout={handleLogout}
-                    />
-                </PageWrapper>
-
-                <PageWrapper view={View.ManageAccount}>
-                    <ManageAccountPage 
-                        onBack={handleBack}
-                        onNavigate={navigateTo}
-                        currentUser={currentUser}
-                    />
-                </PageWrapper>
-
-                <PageWrapper view={View.ChangePassword}>
-                    <ChangePasswordPage
-                        onBack={handleBack}
-                    />
-                </PageWrapper>
-
-                <PageWrapper view={View.Login}>
-                    <LoginPage
-                        onBack={handleBack}
-                        onLoginSuccess={handleLoginSuccess}
-                    />
-                </PageWrapper>
-
-                <PageWrapper view={View.Admin}>
-                    <AdminPage 
-                        onBack={handleBack} 
-                        onNavigate={navigateTo}
-                        currentUser={currentUser}
-                        onLogin={handleLogin}
-                        onLogout={handleLogout}
-                        unreadNotificationsCount={unreadNotificationsCount}
-                    />
-                </PageWrapper>
-                
-                <PageWrapper view={View.ManageUsers}>
-                    <ManageUsersPage 
-                      onBack={handleBack} 
-                      currentUser={currentUser}
-                      onEditUser={handleAdminEditUser}
-                    />
-                </PageWrapper>
-
-                <PageWrapper view={View.ViewFeedback}>
-                    <ViewFeedbackPage
-                        onBack={handleBack}
-                        currentUser={currentUser}
-                    />
-                </PageWrapper>
-
-                <PageWrapper view={View.AdminEditUser}>
-                  {selectedUserIdForAdmin && (
-                      <AdminEditUserPage
-                          userId={selectedUserIdForAdmin}
-                          onBack={handleBack}
-                          onEditPost={(postId) => {
-                              setSelectedPostId(postId);
-                              navigateTo(View.EditPost, { postId });
-                          }}
-                          onViewPost={handleViewPost}
-                      />
-                  )}
-                </PageWrapper>
-
-                <PageWrapper view={View.ManageAds}>
-                    <ManageAdsPage
-                        onBack={handleBack}
-                        currentUser={currentUser}
-                    />
-                </PageWrapper>
-
-                <PageWrapper view={View.Analytics}>
-                    <AnalyticsPage onBack={handleBack} currentUser={currentUser}/>
-                </PageWrapper>
-
-                <PageWrapper view={View.ModerateContent}>
-                    <ModerateContentPage onBack={handleBack} currentUser={currentUser}/>
-                </PageWrapper>
-                
-                <PageWrapper view={View.Notifications}>
-                    <NotificationsPage onBack={handleBack} currentUser={currentUser} onViewPost={handleViewPost} />
-                </PageWrapper>
-
-                <PageWrapper view={View.SiteSettings}>
-                    <SiteSettingsPage onBack={handleBack} />
-                </PageWrapper>
-
-                <PageWrapper view={View.User}>
-                    <UserPage 
-                        onBack={handleBack}
-                        currentUser={currentUser}
-                        onLogout={handleLogout}
-                        onNavigate={navigateTo}
-                        onEditPost={handleEditPost}
-                        onViewPost={handleViewPost}
-                        onViewUser={handleViewUser}
-                        initialTab={userPageInitialTab}
-                    />
-                </PageWrapper>
-
-                <PageWrapper view={View.CreatePost}>
-                    <CreatePostPage
-                        onBack={handleBack}
-                        currentUser={currentUser}
-                        draftId={selectedDraftId}
-                        onNavigate={navigateTo}
-                    />
-                </PageWrapper>
-
-                <PageWrapper view={View.EditPost}>
-                    {selectedPostId && currentUser && (
-                        <EditPostPage
-                            onBack={handleBack}
-                            currentUser={currentUser}
-                            postId={selectedPostId}
-                        />
-                    )}
-                </PageWrapper>
-
-                <PageWrapper view={View.EditProfile}>
-                    {currentUser && (
-                        <EditProfilePage
-                            onBack={handleBack}
-                            currentUser={currentUser}
-                            onProfileUpdate={handleProfileUpdate}
-                        />
-                    )}
-                </PageWrapper>
-                
-                <PageWrapper view={View.PostDetail}>
-                    {selectedPostId && currentView === View.PostDetail && (
-                        <PostDetailPage
-                            key={selectedPostId}
-                            postId={selectedPostId}
-                            currentUser={currentUser}
-                            onBack={handleBack}
-                            onLogin={handleLogin}
-                            onNavigate={navigateTo}
-                            onViewUser={handleViewUser}
-                            onViewPost={handleViewPost}
-                            onEditPost={handleEditPost}
-                            focusComment={shouldFocusComment}
-                        />
-                    )}
-                </PageWrapper>
-
-                <PageWrapper view={View.PublicProfile}>
-                    {selectedUserId && (
-                        <PublicProfilePage
-                            userId={selectedUserId}
-                            currentUser={currentUser}
-                            onBack={handleBack}
-                            onViewPost={handleViewPost}
-                            onLogin={handleLogin}
-                            onNavigate={navigateTo}
-                            onAdminEditUser={handleAdminEditUser}
-                        />
-                    )}
-                </PageWrapper>
-                
-                <PageWrapper view={View.Feedback}>
-                    <FeedbackPage onBack={handleBack} currentUser={currentUser} onNavigate={navigateTo} />
-                </PageWrapper>
-                
-                <PageWrapper view={View.Privacy}>
-                    <PrivacyPage onBack={handleBack} />
-                </PageWrapper>
-
-                <PageWrapper view={View.Terms}>
-                    <TermsPage onBack={handleBack} />
-                </PageWrapper>
-                
-                <PageWrapper view={View.About}>
-                    <AboutPage onBack={handleBack} />
-                </PageWrapper>
+        <Sidebar onNavigate={navigateTo} currentUser={currentUser} currentView={currentView} unreadCount={unreadNotificationsCount} onLogout={handleLogout} onLogin={() => navigateTo(View.Login)} />
+        <div className="relative flex flex-col flex-1 h-full w-full overflow-hidden">
+            <div className="relative flex-1 w-full h-full overflow-hidden md:overflow-y-auto">
+                <PageWrapper view={View.Main}><HomePage onNavigate={navigateTo} currentUser={currentUser} onLogin={() => navigateTo(View.Login)} onLogout={handleLogout} onViewPost={id => navigateTo(View.PostDetail, {postId:id})} onViewUser={id => navigateTo(View.PublicProfile, {userId:id})} onEditPost={id => navigateTo(View.EditPost, {postId:id})} /></PageWrapper>
+                <PageWrapper view={View.Videos}><VideosPage onNavigate={navigateTo} currentUser={currentUser} onLogin={() => navigateTo(View.Login)} videoId={selectedVideoId} isCurrentView={currentView === View.Videos} /></PageWrapper>
+                <PageWrapper view={View.Search}><SearchPage onNavigate={navigateTo} onViewPost={id => navigateTo(View.PostDetail, {postId:id})} currentUser={currentUser} onViewUser={id => navigateTo(View.PublicProfile, {userId:id})} /></PageWrapper>
+                <PageWrapper view={View.CreatePostChoice}><CreatePostChoicePage onBack={() => window.history.back()} onNavigate={navigateTo} /></PageWrapper>
+                <PageWrapper view={View.CreateVideo}><CreateVideoPage onBack={() => window.history.back()} currentUser={currentUser} onNavigate={navigateTo} draftId={selectedDraftId} /></PageWrapper>
+                <PageWrapper view={View.CreatePost}><CreatePostPage onBack={() => window.history.back()} currentUser={currentUser} onNavigate={navigateTo} draftId={selectedDraftId} /></PageWrapper>
+                <PageWrapper view={View.User}><UserPage onBack={() => window.history.back()} currentUser={currentUser} onLogout={handleLogout} onNavigate={navigateTo} onEditPost={id => navigateTo(View.EditPost, {postId:id})} onViewPost={id => navigateTo(View.PostDetail, {postId:id})} onViewUser={id => navigateTo(View.PublicProfile, {userId:id})} initialTab={userPageInitialTab} /></PageWrapper>
+                <PageWrapper view={View.PostDetail}>{selectedPostId && <PostDetailPage postId={selectedPostId} currentUser={currentUser} onBack={() => window.history.back()} onLogin={() => navigateTo(View.Login)} onNavigate={navigateTo} onViewUser={id => navigateTo(View.PublicProfile, {userId:id})} onViewPost={id => navigateTo(View.PostDetail, {postId:id})} onEditPost={id => navigateTo(View.EditPost, {postId:id})} focusComment={shouldFocusComment} />}</PageWrapper>
+                <PageWrapper view={View.PublicProfile}>{selectedUserId && <PublicProfilePage userId={selectedUserId} currentUser={currentUser} onBack={() => window.history.back()} onViewPost={id => navigateTo(View.PostDetail, {postId:id})} onLogin={() => navigateTo(View.Login)} onNavigate={navigateTo} onAdminEditUser={id => navigateTo(View.AdminEditUser, {adminUserId:id})} />}</PageWrapper>
+                <PageWrapper view={View.Login}><LoginPage onBack={() => window.history.back()} onLoginSuccess={() => navigateTo(View.Main)} /></PageWrapper>
+                <PageWrapper view={View.Settings}><SettingsPage onBack={() => window.history.back()} onNavigate={navigateTo} currentUser={currentUser} onLogout={handleLogout} /></PageWrapper>
+                <PageWrapper view={View.About}><AboutPage onBack={() => window.history.back()} /></PageWrapper>
+                <PageWrapper view={View.Privacy}><PrivacyPage onBack={() => window.history.back()} /></PageWrapper>
+                <PageWrapper view={View.Terms}><TermsPage onBack={() => window.history.back()} /></PageWrapper>
+                <PageWrapper view={View.Feedback}><FeedbackPage onBack={() => window.history.back()} currentUser={currentUser} onNavigate={navigateTo} /></PageWrapper>
+                <PageWrapper view={View.Notifications}><NotificationsPage onBack={() => window.history.back()} currentUser={currentUser} onViewPost={id => navigateTo(View.PostDetail, {postId:id})} onNavigate={navigateTo} /></PageWrapper>
+                <PageWrapper view={View.Admin}><AdminPage onBack={() => window.history.back()} currentUser={currentUser} onLogin={() => navigateTo(View.Login)} onLogout={handleLogout} onNavigate={navigateTo} unreadNotificationsCount={unreadNotificationsCount} /></PageWrapper>
+                <PageWrapper view={View.ManageUsers}><ManageUsersPage onBack={() => window.history.back()} currentUser={currentUser} onEditUser={id => navigateTo(View.AdminEditUser, {adminUserId:id})} /></PageWrapper>
+                <PageWrapper view={View.AdminEditUser}>{selectedUserIdForAdmin && <AdminEditUserPage userId={selectedUserIdForAdmin} onBack={() => window.history.back()} onEditPost={id => navigateTo(View.EditPost, {postId:id})} onViewPost={id => navigateTo(View.PostDetail, {postId:id})} />}</PageWrapper>
+                <PageWrapper view={View.ManageAds}><ManageAdsPage onBack={() => window.history.back()} currentUser={currentUser} /></PageWrapper>
+                <PageWrapper view={View.Analytics}><AnalyticsPage onBack={() => window.history.back()} currentUser={currentUser} /></PageWrapper>
+                <PageWrapper view={View.ModerateContent}><ModerateContentPage onBack={() => window.history.back()} currentUser={currentUser} /></PageWrapper>
+                <PageWrapper view={View.ViewFeedback}><ViewFeedbackPage onBack={() => window.history.back()} currentUser={currentUser} /></PageWrapper>
+                <PageWrapper view={View.SiteSettings}><SiteSettingsPage onBack={() => window.history.back()} /></PageWrapper>
+                <PageWrapper view={View.ManageAccount}><ManageAccountPage onBack={() => window.history.back()} onNavigate={navigateTo} currentUser={currentUser} /></PageWrapper>
+                <PageWrapper view={View.ChangePassword}><ChangePasswordPage onBack={() => window.history.back()} /></PageWrapper>
+                <PageWrapper view={View.EditProfile}>{currentUser && <EditProfilePage onBack={() => window.history.back()} currentUser={currentUser} onProfileUpdate={(data) => setCurrentUser(prev => prev ? {...prev, ...data} : null)} />}</PageWrapper>
+                <PageWrapper view={View.EditPost}>{selectedPostId && currentUser && <EditPostPage postId={selectedPostId} currentUser={currentUser} onBack={() => window.history.back()} />}</PageWrapper>
             </div>
-
-            <BottomNavBar
-                onNavigate={navigateTo}
-                currentUser={currentUser}
-                currentView={currentView}
-                unreadCount={unreadNotificationsCount}
-            />
+            <BottomNavBar onNavigate={navigateTo} currentUser={currentUser} currentView={currentView} unreadCount={unreadNotificationsCount} />
         </div>
     </div>
   );
 };
 
-const App: React.FC = () => {
-  return (
-    <LanguageProvider>
-    <ToastProvider>
-        <AppContent />
-    </ToastProvider>
-    </LanguageProvider>
-  );
-};
-
+const App: React.FC = () => (<LanguageProvider><ToastProvider><AppContent /></ToastProvider></LanguageProvider>);
 export default App;

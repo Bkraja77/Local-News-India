@@ -1,6 +1,7 @@
 
 export enum View {
   Main = 'main',
+  Videos = 'videos',
   Search = 'search',
   Settings = 'settings',
   Feedback = 'feedback',
@@ -12,6 +13,8 @@ export enum View {
   PublicProfile = 'publicProfile',
   Login = 'login',
   CreatePost = 'createPost',
+  CreatePostChoice = 'createPostChoice',
+  CreateVideo = 'createVideo',
   EditPost = 'editPost',
   EditProfile = 'editProfile',
   ManageUsers = 'manageUsers',
@@ -51,7 +54,27 @@ export interface Post {
   viewCount: number;
   shareCount: number;
   category: string;
-  createdAt: Date | null; // Firestore Timestamp converted to JS Date
+  createdAt: Date | null;
+  locationType: 'Overall' | 'State' | 'District' | 'Block';
+  state?: string;
+  district?: string;
+  block?: string;
+}
+
+export interface VideoPost {
+  id: string;
+  title: string;
+  description?: string;
+  tags?: string[];
+  videoUrl: string;
+  thumbnailUrl: string;
+  authorId: string;
+  authorName: string;
+  authorProfilePicUrl: string;
+  viewCount: number;
+  shareCount: number;
+  category: string;
+  createdAt: Date | null;
   locationType: 'Overall' | 'State' | 'District' | 'Block';
   state?: string;
   district?: string;
@@ -60,20 +83,24 @@ export interface Post {
 
 export interface Draft {
   id: string;
+  type: 'article' | 'video';
   title: string;
-  content: string;
+  description?: string;
+  tags?: string;
+  content?: string;
+  videoUrl?: string;
   category: string;
   thumbnailUrl: string;
   state?: string;
   district?: string;
   block?: string;
-  createdAt: any; // Firestore Timestamp
-  updatedAt?: any; // Firestore Timestamp
+  createdAt: any;
+  updatedAt?: any;
 }
 
 export interface Comment {
   id: string;
-  content: string; // Renamed from 'text' to match Firestore rules
+  content: string;
   authorId: string;
   authorName: string;
   authorProfilePicUrl: string;
@@ -85,13 +112,14 @@ export interface Comment {
 
 export interface Notification {
   id: string;
-  type: 'new_follower' | 'new_like' | 'new_comment' | 'new_post';
+  type: 'new_follower' | 'new_like' | 'new_comment' | 'new_post' | 'new_video' | 'new_share';
   fromUserId: string;
   fromUserName: string;
   fromUserProfilePicUrl: string;
   createdAt: Date;
   read: boolean;
   postId?: string;
+  videoId?: string;
   postTitle?: string;
 }
 

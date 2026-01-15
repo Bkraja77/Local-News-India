@@ -478,6 +478,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate, currentUser, onLogin, o
                     logoUrl={APP_LOGO_URL}
                     showSettingsButton
                     onSettings={() => onNavigate(View.Settings)}
+                    onSearch={() => onNavigate(View.Search)}
                     currentUser={currentUser}
                     onProfileClick={() => onNavigate(View.User)}
                     onLogin={onLogin}

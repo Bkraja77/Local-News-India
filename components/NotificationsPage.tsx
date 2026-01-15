@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Header from './Header';
 import { db } from '../firebaseConfig';
-import { User, Notification } from '../types';
+import { User, Notification, View } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useToast } from '../contexts/ToastContext';
 import ConfirmationModal from './ConfirmationModal';
@@ -11,6 +11,7 @@ interface NotificationsPageProps {
   onBack: () => void;
   currentUser: User | null;
   onViewPost: (postId: string) => void;
+  onNavigate: (view: View, params?: any) => void;
 }
 
 const SkeletonNotification = () => (
@@ -42,7 +43,7 @@ const SwipeableNotificationItem: React.FC<SwipeableItemProps> = ({
     const startX = useRef<number | null>(null);
     const itemRef = useRef<HTMLDivElement>(null);
 
-    const DELETE_BTN_WIDTH = 80; // Width of the revealed delete button
+    const DELETE_BTN_WIDTH = 80;
 
     const handleTouchStart = (e: React.TouchEvent) => {
         startX.current = e.touches[0].clientX;
@@ -54,24 +55,13 @@ const SwipeableNotificationItem: React.FC<SwipeableItemProps> = ({
         const currentX = e.touches[0].clientX;
         const diff = currentX - startX.current;
 
-        // Logic:
-        // If currently closed (offset 0), diff < 0 opens it.
-        // If currently open (offset -DELETE_BTN_WIDTH), diff > 0 closes it.
-        // We calculate a raw new offset based on the current state (isOpen or not).
-        // Since we don't persist "isOpen" state explicitly other than offset value, we assume start based on current offset.
-        
-        // However, standard behavior: just track delta from start.
-        // If we started at 0: new = diff.
-        // If we started at -80: new = -80 + diff.
-        
         let newOffset = diff;
-        if (offsetX < 0) { // Assuming it was open
+        if (offsetX < 0) {
              newOffset = -DELETE_BTN_WIDTH + diff;
         }
 
-        // Constraints
-        if (newOffset > 0) newOffset = 0; // Can't swipe right past start
-        if (newOffset < -DELETE_BTN_WIDTH * 1.5) newOffset = -DELETE_BTN_WIDTH * 1.5; // Max drag left
+        if (newOffset > 0) newOffset = 0;
+        if (newOffset < -DELETE_BTN_WIDTH * 1.5) newOffset = -DELETE_BTN_WIDTH * 1.5;
 
         setOffsetX(newOffset);
     };
@@ -80,19 +70,18 @@ const SwipeableNotificationItem: React.FC<SwipeableItemProps> = ({
         setIsSwiping(false);
         startX.current = null;
 
-        // Snap logic
         if (offsetX < -(DELETE_BTN_WIDTH / 2)) {
-            setOffsetX(-DELETE_BTN_WIDTH); // Snap Open
+            setOffsetX(-DELETE_BTN_WIDTH);
         } else {
-            setOffsetX(0); // Snap Close
+            setOffsetX(0);
         }
     };
 
     const handleContentClick = () => {
         if (offsetX !== 0) {
-            setOffsetX(0); // Close if open
+            setOffsetX(0);
         } else {
-            onClick(notification); // Normal click
+            onClick(notification);
         }
     };
 
@@ -106,7 +95,6 @@ const SwipeableNotificationItem: React.FC<SwipeableItemProps> = ({
 
     return (
         <div className="relative overflow-hidden border-b border-gray-100 last:border-b-0 select-none">
-            {/* Background Action Layer */}
             <div className="absolute inset-y-0 right-0 w-full bg-red-600 flex justify-end items-center z-0">
                 <button 
                     onClick={handleDeleteClick}
@@ -118,7 +106,6 @@ const SwipeableNotificationItem: React.FC<SwipeableItemProps> = ({
                 </button>
             </div>
 
-            {/* Foreground Content Layer */}
             <div 
                 ref={itemRef}
                 className={`relative z-10 w-full p-4 md:p-5 flex items-center gap-4 ${bgClass}`}
@@ -157,7 +144,6 @@ const SwipeableNotificationItem: React.FC<SwipeableItemProps> = ({
                         <div className="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-sm animate-pulse"></div>
                     )}
                     
-                    {/* Desktop Delete Button (Hidden on Mobile as Swipe replaces it) */}
                     <button 
                         onClick={handleDeleteClick}
                         className="hidden md:block p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
@@ -172,7 +158,7 @@ const SwipeableNotificationItem: React.FC<SwipeableItemProps> = ({
 };
 
 
-const NotificationsPage: React.FC<NotificationsPageProps> = ({ onBack, currentUser, onViewPost }) => {
+const NotificationsPage: React.FC<NotificationsPageProps> = ({ onBack, currentUser, onViewPost, onNavigate }) => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [isClearModalOpen, setIsClearModalOpen] = useState(false);
@@ -211,7 +197,6 @@ const NotificationsPage: React.FC<NotificationsPageProps> = ({ onBack, currentUs
   const handleNotificationClick = async (notification: Notification) => {
     if (!currentUser) return;
 
-    // Mark as read
     if (!notification.read) {
       try {
         await db.collection('users')
@@ -224,15 +209,15 @@ const NotificationsPage: React.FC<NotificationsPageProps> = ({ onBack, currentUs
       }
     }
 
-    // Navigate if applicable
-    if (notification.postId) {
-      onViewPost(notification.postId);
+    if (notification.videoId) {
+        onNavigate(View.Videos, { videoId: notification.videoId });
+    } else if (notification.postId) {
+        onViewPost(notification.postId);
     }
   };
 
   const handleDeleteOne = async (notificationId: string) => {
     if (!currentUser) return;
-
     try {
         await db.collection('users')
             .doc(currentUser.uid)
@@ -242,25 +227,21 @@ const NotificationsPage: React.FC<NotificationsPageProps> = ({ onBack, currentUs
         showToast("Notification removed", "success");
     } catch (error) {
         console.error("Error deleting notification:", error);
-        showToast("Failed to delete notification", "error");
     }
   };
 
   const handleClearAll = async () => {
       if (!currentUser || notifications.length === 0) return;
       setIsDeleting(true);
-      
       try {
           const batch = db.batch();
           notifications.forEach(notif => {
               const ref = db.collection('users').doc(currentUser.uid).collection('notifications').doc(notif.id);
               batch.delete(ref);
           });
-          
           await batch.commit();
           showToast("All notifications cleared", "success");
       } catch (error) {
-          console.error("Error clearing notifications:", error);
           showToast("Failed to clear notifications", "error");
       } finally {
           setIsDeleting(false);
@@ -271,7 +252,6 @@ const NotificationsPage: React.FC<NotificationsPageProps> = ({ onBack, currentUs
   const timeAgo = (date: Date) => {
     const now = new Date();
     const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-    
     if (seconds < 60) return 'Just now';
     const minutes = Math.floor(seconds / 60);
     if (minutes < 60) return `${minutes}m ago`;
@@ -283,15 +263,22 @@ const NotificationsPage: React.FC<NotificationsPageProps> = ({ onBack, currentUs
   };
 
   const getNotificationText = (notification: Notification) => {
+    const contentName = notification.videoId ? 'video' : 'post';
+    const title = notification.postTitle || 'Untitled';
+    
     switch (notification.type) {
       case 'new_like':
-        return `liked your post "${notification.postTitle || 'Untitled'}"`;
+        return `liked your ${contentName} "${title}"`;
       case 'new_comment':
-        return `commented on your post "${notification.postTitle || 'Untitled'}"`;
+        return `commented on your ${contentName} "${title}"`;
+      case 'new_share':
+        return `shared your video news "${title}"`;
       case 'new_follower':
         return `started following you`;
       case 'new_post':
-        return `published a new post "${notification.postTitle || 'Untitled'}"`;
+        return `published a new post "${title}"`;
+      case 'new_video':
+        return `published a new video news "${title}"`;
       default:
         return 'interacted with you';
     }
@@ -301,8 +288,10 @@ const NotificationsPage: React.FC<NotificationsPageProps> = ({ onBack, currentUs
     switch (type) {
       case 'new_like': return 'favorite';
       case 'new_comment': return 'chat_bubble';
+      case 'new_share': return 'share';
       case 'new_follower': return 'person_add';
       case 'new_post': return 'article';
+      case 'new_video': return 'movie';
       default: return 'notifications';
     }
   };
@@ -311,8 +300,10 @@ const NotificationsPage: React.FC<NotificationsPageProps> = ({ onBack, currentUs
     switch (type) {
       case 'new_like': return 'text-red-500 bg-red-50';
       case 'new_comment': return 'text-blue-500 bg-blue-50';
-      case 'new_follower': return 'text-green-500 bg-green-50';
-      case 'new_post': return 'text-purple-500 bg-purple-50';
+      case 'new_share': return 'text-green-500 bg-green-50';
+      case 'new_follower': return 'text-purple-500 bg-purple-50';
+      case 'new_post': return 'text-indigo-500 bg-indigo-50';
+      case 'new_video': return 'text-orange-500 bg-orange-50';
       default: return 'text-gray-500 bg-gray-50';
     }
   };
@@ -339,7 +330,6 @@ const NotificationsPage: React.FC<NotificationsPageProps> = ({ onBack, currentUs
             </div>
           ) : (
             <div className="w-full space-y-4">
-                {/* Clear All Button */}
                 <div className="flex justify-end px-4 md:px-0">
                     <button 
                         onClick={() => setIsClearModalOpen(true)}
@@ -351,7 +341,6 @@ const NotificationsPage: React.FC<NotificationsPageProps> = ({ onBack, currentUs
                 </div>
 
                 <div className="glass-card overflow-hidden w-full">
-                    {/* Render Swipeable Items */}
                     <div>
                         {notifications.map(notification => (
                             <SwipeableNotificationItem

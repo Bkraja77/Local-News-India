@@ -339,6 +339,13 @@ const PostDetailPage: React.FC<PostDetailPageProps> = ({ postId, currentUser, on
 
     const stopAudio = () => { if (audioSourceRef.current) { try { audioSourceRef.current.stop(); } catch(e) {} audioSourceRef.current = null; } if (audioContextRef.current) { try { if (audioContextRef.current.state !== 'closed') audioContextRef.current.close(); } catch(e) {} audioContextRef.current = null; } setIsPlayingAudio(false); };
 
+    // Support global media interruption
+    useEffect(() => {
+        const handleStopAudio = () => stopAudio();
+        window.addEventListener('stop-app-audio', handleStopAudio);
+        return () => window.removeEventListener('stop-app-audio', handleStopAudio);
+    }, []);
+
     useEffect(() => {
         isMounted.current = true; setLoading(true); setError(null); hasAutoPlayed.current = false;
         const postRef = db.collection('posts').doc(postId);
