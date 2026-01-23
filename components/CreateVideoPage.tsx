@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Header from './Header';
-import { User, View, Draft } from '../types';
+import { User, View, Draft, VideoPost } from '../types';
 import { db, storage, serverTimestamp } from '../firebaseConfig';
 import { v4 as uuidv4 } from 'uuid';
 import LocationSelector from './LocationSelector';
@@ -14,11 +14,12 @@ interface CreateVideoPageProps {
   currentUser: User | null;
   onNavigate: (view: View, params?: any) => void;
   draftId?: string | null;
+  videoId?: string | null;
 }
 
 const newsCategories = ['Politics', 'Crime', 'Sports', 'Entertainment', 'Business', 'Technology', 'Health', 'World', 'General'];
 
-const CreateVideoPage: React.FC<CreateVideoPageProps> = ({ onBack, currentUser, onNavigate, draftId }) => {
+const CreateVideoPage: React.FC<CreateVideoPageProps> = ({ onBack, currentUser, onNavigate, draftId, videoId }) => {
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
     const [category, setCategory] = useState('');
@@ -49,28 +50,44 @@ const CreateVideoPage: React.FC<CreateVideoPageProps> = ({ onBack, currentUser, 
             db.collection('users').doc(currentUser.uid).collection('drafts').doc(draftId).get().then(doc => {
                 if (doc.exists) {
                     const data = doc.data() as Draft;
-                    setTitle(data.title || '');
-                    setDescription(data.description || '');
-                    setCategory(data.category || '');
-                    setState(data.state || '');
-                    setDistrict(data.district || '');
-                    setBlock(data.block || '');
-                    if (data.videoUrl) {
-                        setExistingVideoUrl(data.videoUrl);
-                        setVideoPreviewUrl(data.videoUrl);
-                    }
-                    if (data.thumbnailUrl) {
-                        setExistingThumbnailUrl(data.thumbnailUrl);
-                        setCapturedThumbnail(data.thumbnailUrl);
-                    }
+                    populateFields(data);
                 }
                 setIsLoading(false);
             }).catch(e => {
                 showToast("Error loading draft", "error");
                 setIsLoading(false);
             });
+        } else if (videoId) {
+            setIsLoading(true);
+            db.collection('videos').doc(videoId).get().then(doc => {
+                if (doc.exists) {
+                    const data = doc.data() as any;
+                    populateFields(data);
+                }
+                setIsLoading(false);
+            }).catch(e => {
+                showToast("Error loading video data", "error");
+                setIsLoading(false);
+            });
         }
-    }, [draftId, currentUser]);
+    }, [draftId, videoId, currentUser]);
+
+    const populateFields = (data: any) => {
+        setTitle(data.title || '');
+        setDescription(data.description || '');
+        setCategory(data.category || '');
+        setState(data.state || '');
+        setDistrict(data.district || '');
+        setBlock(data.block || '');
+        if (data.videoUrl) {
+            setExistingVideoUrl(data.videoUrl);
+            setVideoPreviewUrl(data.videoUrl);
+        }
+        if (data.thumbnailUrl) {
+            setExistingThumbnailUrl(data.thumbnailUrl);
+            setCapturedThumbnail(data.thumbnailUrl);
+        }
+    };
 
     useEffect(() => {
         return () => {
@@ -95,7 +112,6 @@ const CreateVideoPage: React.FC<CreateVideoPageProps> = ({ onBack, currentUser, 
             const localUrl = URL.createObjectURL(file);
             setVideoFile(file);
             setVideoPreviewUrl(localUrl);
-            setExistingVideoUrl(null);
             setCapturedThumbnail(null);
             setError(null);
         }
@@ -123,7 +139,6 @@ const CreateVideoPage: React.FC<CreateVideoPageProps> = ({ onBack, currentUser, 
         }
         setVideoFile(null);
         setVideoPreviewUrl(null);
-        setExistingVideoUrl(null);
         setCapturedThumbnail(null);
     };
 
@@ -145,7 +160,7 @@ const CreateVideoPage: React.FC<CreateVideoPageProps> = ({ onBack, currentUser, 
         setUploadStatus('Processing Draft...');
         setError(null);
         try {
-            const vidId = draftId || uuidv4();
+            const vidId = draftId || videoId || uuidv4();
             let videoUrl = existingVideoUrl || '';
             
             setUploadStatus('Uploading Image...');
@@ -235,28 +250,35 @@ const CreateVideoPage: React.FC<CreateVideoPageProps> = ({ onBack, currentUser, 
         setError(null);
         
         try {
-            const videoId = uuidv4();
+            const vidId = videoId || uuidv4();
             let videoUrl = existingVideoUrl || '';
             let thumbUrl = existingThumbnailUrl || '';
 
-            // 1. Upload Thumbnail (Stages 2% to 15%)
+            // 1. Upload Thumbnail if changed
             if (capturedThumbnail && capturedThumbnail.startsWith('data:')) {
                 setUploadStatus('Uploading Thumbnail...');
-                thumbUrl = await uploadBase64Image(capturedThumbnail, `video-thumbnails/${videoId}.jpg`);
+                // Cleanup old if exists
+                if (existingThumbnailUrl?.includes('firebasestorage')) {
+                    storage.refFromURL(existingThumbnailUrl).delete().catch(() => {});
+                }
+                thumbUrl = await uploadBase64Image(capturedThumbnail, `video-thumbnails/${vidId}.jpg`);
                 setUploadProgress(15);
             }
 
-            // 2. Upload Video (Stages 15% to 90%)
+            // 2. Upload Video if changed
             if (videoFile) {
                 setUploadStatus('Uploading News Video...');
+                // Cleanup old
+                if (existingVideoUrl?.includes('firebasestorage')) {
+                    storage.refFromURL(existingVideoUrl).delete().catch(() => {});
+                }
                 const extension = videoFile.name.split('.').pop() || 'mp4';
-                const vRef = storage.ref(`videos/${videoId}.${extension}`);
+                const vRef = storage.ref(`videos/${vidId}.${extension}`);
                 const videoUploadTask = vRef.put(videoFile);
                 
                 videoUploadTask.on('state_changed', 
                     (snapshot) => {
                         const snapPct = (snapshot.bytesTransferred / snapshot.totalBytes);
-                        // Map video progress to 15% - 90% range
                         const mappedProgress = Math.round(15 + (snapPct * 75));
                         setUploadProgress(mappedProgress);
                     }
@@ -266,11 +288,11 @@ const CreateVideoPage: React.FC<CreateVideoPageProps> = ({ onBack, currentUser, 
                 videoUrl = await vRef.getDownloadURL();
             }
 
-            // 3. Save to Firestore (Stages 90% to 100%)
+            // 3. Save to Firestore
             setUploadStatus('Finalizing News Post...');
             setUploadProgress(95);
             
-            const newVideoRef = await db.collection("videos").add({
+            const payload = {
                 title,
                 description,
                 videoUrl,
@@ -279,55 +301,34 @@ const CreateVideoPage: React.FC<CreateVideoPageProps> = ({ onBack, currentUser, 
                 authorId: currentUser.uid,
                 authorName: currentUser.name,
                 authorProfilePicUrl: currentUser.profilePicUrl,
-                viewCount: 0,
-                shareCount: 0,
-                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
                 state,
                 district,
                 block,
                 locationType: block ? 'Block' : (district ? 'District' : (state ? 'State' : 'Overall'))
-            });
+            };
+
+            if (videoId) {
+                await db.collection("videos").doc(videoId).update(payload);
+            } else {
+                await db.collection("videos").add({
+                    ...payload,
+                    viewCount: 0,
+                    shareCount: 0,
+                    createdAt: serverTimestamp()
+                });
+            }
 
             if (draftId) {
                 await db.collection('users').doc(currentUser.uid).collection('drafts').doc(draftId).delete().catch(console.warn);
             }
 
-            // 4. Send Notifications to Followers (Background)
-            const sendNotifications = async () => {
-                try {
-                    const followersSnapshot = await db.collection('users').doc(currentUser.uid).collection('followers').get();
-                    if (!followersSnapshot.empty) {
-                        const notificationBatch = db.batch();
-                        followersSnapshot.forEach(followerDoc => {
-                            const followerId = followerDoc.id;
-                            const notificationRef = db.collection('users').doc(followerId).collection('notifications').doc();
-                            notificationBatch.set(notificationRef, {
-                                type: 'new_video',
-                                fromUserId: currentUser.uid,
-                                fromUserName: currentUser.name,
-                                fromUserProfilePicUrl: currentUser.profilePicUrl,
-                                videoId: newVideoRef.id,
-                                postTitle: title,
-                                createdAt: serverTimestamp(),
-                                read: false
-                            });
-                        });
-                        await notificationBatch.commit();
-                    }
-                } catch (notificationError) {
-                    console.error("Background notification failed for video:", notificationError);
-                }
-            };
-            sendNotifications();
-
             setUploadProgress(100);
-            setUploadStatus('Done!');
-            showToast("Video news published successfully!", "success");
+            showToast(videoId ? "Video updated successfully!" : "Video news published successfully!", "success");
             onNavigate(View.Videos);
         } catch (err: any) {
             console.error("Publishing error:", err);
-            setError(err.message || "Failed to publish video. Please try again.");
-            showToast("Video publishing failed", "error");
+            setError(err.message || "Failed to publish video.");
             setIsLoading(false);
             setUploadProgress(0);
         }
@@ -335,7 +336,7 @@ const CreateVideoPage: React.FC<CreateVideoPageProps> = ({ onBack, currentUser, 
 
     return (
         <div className="flex flex-col h-full bg-white">
-            <Header title={draftId ? "Edit Video Draft" : "Post Video News"} showBackButton onBack={onBack} />
+            <Header title={videoId ? "Edit Video News" : (draftId ? "Edit Video Draft" : "Post Video News")} showBackButton onBack={onBack} />
             <main className="flex-grow overflow-y-auto p-4 md:p-8 pb-20">
                 <form onSubmit={handleSubmit} className="max-w-2xl mx-auto space-y-6">
                     {error && <div className="p-4 bg-red-50 text-red-700 rounded-xl text-sm border border-red-200 animate-in fade-in slide-in-from-top-1">{error}</div>}
@@ -417,15 +418,10 @@ const CreateVideoPage: React.FC<CreateVideoPageProps> = ({ onBack, currentUser, 
                                             ) : (
                                                 <span className="material-symbols-outlined text-4xl">photo_camera</span>
                                             )}
-                                            {capturedThumbnail && (
-                                                <div className="absolute top-1 right-1 bg-green-500 text-white rounded-full p-0.5">
-                                                    <span className="material-symbols-outlined text-xs">check</span>
-                                                </div>
-                                            )}
                                         </div>
                                         <div className="flex-1">
                                             <p className="text-xs font-bold text-gray-700 uppercase tracking-wide">Preview Image</p>
-                                            <p className="text-[10px] text-gray-500 leading-relaxed">This image will represent your video news in the feed.</p>
+                                            <p className="text-[10px] text-gray-500 leading-relaxed">This image represents your news in the feed.</p>
                                         </div>
                                     </div>
                                 </div>
@@ -439,7 +435,7 @@ const CreateVideoPage: React.FC<CreateVideoPageProps> = ({ onBack, currentUser, 
                         <div className="w-full space-y-3 p-5 bg-red-50 rounded-2xl border border-red-100 shadow-sm animate-in slide-in-from-bottom-2">
                              <div className="flex justify-between items-end">
                                 <div>
-                                    <p className="text-[10px] font-black text-red-600 uppercase tracking-widest mb-1">{isLoading ? 'PUBLISHING NEWS' : 'SAVING DRAFT'}</p>
+                                    <p className="text-[10px] font-black text-red-600 uppercase tracking-widest mb-1">{videoId ? 'UPDATING NEWS' : (isLoading ? 'PUBLISHING NEWS' : 'SAVING DRAFT')}</p>
                                     <p className="text-xs font-bold text-red-500 flex items-center gap-2">
                                         <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-ping"></span>
                                         {uploadStatus}
@@ -453,11 +449,6 @@ const CreateVideoPage: React.FC<CreateVideoPageProps> = ({ onBack, currentUser, 
                                     style={{ width: `${uploadProgress}%` }}
                                 ></div>
                             </div>
-                            {uploadProgress > 90 && (
-                                <p className="text-[9px] text-center text-red-500 font-bold animate-pulse uppercase tracking-wider">
-                                    Finalizing... please do not close this page
-                                </p>
-                            )}
                         </div>
                     )}
 
@@ -475,7 +466,7 @@ const CreateVideoPage: React.FC<CreateVideoPageProps> = ({ onBack, currentUser, 
                             type="submit" 
                             className="flex-[2] p-4 gradient-button text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-red-200 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                            {isLoading ? "UPLOADING..." : "Publish Video News"}
+                            {isLoading ? "UPLOADING..." : (videoId ? "Save Changes" : "Publish Video News")}
                         </button>
                     </div>
                 </form>

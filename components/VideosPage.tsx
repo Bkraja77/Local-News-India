@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Header from './Header';
-import { db, serverTimestamp, increment, firebase } from '../firebaseConfig';
-import { VideoPost, User, View, Comment } from '../types';
+import { db, serverTimestamp, increment, firebase, storage } from '../firebaseConfig';
+// Added Reply to the imported types to fix name lookup errors
+import { VideoPost, User, View, Comment, Reply } from '../types';
 import { formatCount } from '../utils/formatters';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useToast } from '../contexts/ToastContext';
@@ -11,6 +12,20 @@ import LocationFilter from './LocationFilter';
 import { indianLocations } from '../data/locations';
 import SEO from './SEO';
 import { APP_LOGO_URL } from '../utils/constants';
+import ConfirmationModal from './ConfirmationModal';
+
+const timeAgo = (date: Date | null | undefined) => {
+    if (!date) return 'Just now';
+    const now = new Date();
+    const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+    if (seconds < 60) return 'Just now';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h`;
+    const days = Math.floor(hours / 24);
+    return `${days}d`;
+};
 
 interface VideosPageProps {
     onNavigate: (view: View, params?: any) => void;
@@ -22,7 +37,211 @@ interface VideosPageProps {
 
 const newsCategories = ['Recent News', 'Politics', 'Crime', 'Sports', 'Entertainment', 'Business', 'Technology', 'Health', 'World', 'General'];
 
-// --- Sub-component: VideoCard (Main Feed Grid with Auto-play & Sound Toggle) ---
+const VideoReplyItem: React.FC<{ 
+    // Reply type is now imported from ../types
+    reply: Reply; 
+    videoId: string; 
+    commentId: string; 
+    currentUser: User | null; 
+    isVideoAuthor: boolean; 
+    isAdmin: boolean; 
+    onViewUser: (id: string) => void; 
+    showToast: (msg: string, type?: 'success' | 'error' | 'info') => void; 
+}> = ({ reply, videoId, commentId, currentUser, isVideoAuthor, isAdmin, onViewUser, showToast }) => {
+    const [isEditing, setIsEditing] = useState(false);
+    const [editText, setEditText] = useState('');
+    const [isSavingEdit, setIsSavingEdit] = useState(false);
+    const [showMenu, setShowMenu] = useState(false);
+    const menuRef = useRef<HTMLDivElement>(null);
+
+    const isCurrentUserReply = currentUser && currentUser.uid === reply.authorId;
+
+    const handleDeleteReply = async () => {
+        if (!currentUser) return;
+        if (window.confirm("Delete this reply?")) {
+            try {
+                await db.collection('videos').doc(videoId).collection('comments').doc(commentId).collection('replies').doc(reply.id).delete();
+                showToast("Reply deleted", "success");
+            } catch (error) {
+                showToast("Could not delete", "error");
+            }
+        }
+    };
+
+    const saveEdit = async () => {
+        if (!editText.trim()) return;
+        setIsSavingEdit(true);
+        try {
+            await db.collection('videos').doc(videoId).collection('comments').doc(commentId).collection('replies').doc(reply.id).update({ content: editText.trim() });
+            setIsEditing(false);
+            showToast("Reply updated", "success");
+        } catch (error) {
+            showToast("Failed to update", "error");
+        } finally {
+            setIsSavingEdit(false);
+        }
+    };
+
+    return (
+        <div className="flex gap-2 group/reply animate-in fade-in slide-in-from-top-1 duration-300">
+            <div className="flex flex-col items-center">
+                <div className="w-0.5 h-4 bg-gray-100 rounded-full mb-1"></div>
+                <img src={reply.authorProfilePicUrl} className="w-6 h-6 rounded-full object-cover ring-1 ring-gray-100" onClick={() => onViewUser(reply.authorId)} alt="" />
+            </div>
+            <div className={`flex-grow border transition-all rounded-xl rounded-tl-none p-2.5 relative ${isEditing ? 'bg-white border-blue-200' : 'bg-gray-50 border-gray-100'}`}>
+                <div className="flex justify-between items-start mb-1">
+                    <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-[11px] text-gray-800" onClick={() => onViewUser(reply.authorId)}>{reply.authorName}</span>
+                        {isVideoAuthor && <span className="text-red-600 text-[8px] font-black uppercase">Author</span>}
+                        <span className="text-[9px] text-gray-400">{timeAgo(reply.createdAt)}</span>
+                    </div>
+                    {(isAdmin || isCurrentUserReply) && !isEditing && (
+                        <button onClick={() => setShowMenu(!showMenu)} className="text-gray-300 hover:text-gray-600"><span className="material-symbols-outlined text-sm">more_horiz</span></button>
+                    )}
+                </div>
+                {isEditing ? (
+                    <div>
+                        <textarea value={editText} onChange={(e) => setEditText(e.target.value)} className="w-full p-2 text-xs border rounded-lg focus:ring-1 focus:ring-blue-500 outline-none" autoFocus />
+                        <div className="flex justify-end gap-2 mt-1">
+                            <button onClick={() => setIsEditing(false)} className="px-2 py-1 text-[10px] text-gray-500">Cancel</button>
+                            <button onClick={saveEdit} className="px-2 py-1 text-[10px] bg-blue-600 text-white rounded-lg">Save</button>
+                        </div>
+                    </div>
+                ) : <p className="text-xs text-gray-700 leading-relaxed break-words">{reply.content}</p>}
+                {showMenu && (
+                    <div className="absolute right-0 top-6 bg-white shadow-xl border rounded-lg z-20 overflow-hidden text-[10px] font-bold">
+                        <button onClick={() => { setIsEditing(true); setEditText(reply.content); setShowMenu(false); }} className="w-full text-left px-3 py-2 hover:bg-gray-50">Edit</button>
+                        <button onClick={handleDeleteReply} className="w-full text-left px-3 py-2 text-red-600 hover:bg-red-50">Delete</button>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+const VideoCommentItem: React.FC<{ 
+    comment: Comment; 
+    videoId: string; 
+    currentUser: User | null; 
+    videoAuthorId: string; 
+    isAdmin: boolean; 
+    onViewUser: (id: string) => void; 
+    onDelete: (id: string) => void; 
+    onLogin: () => void; 
+    showToast: (msg: string, type?: 'success' | 'error' | 'info') => void; 
+}> = ({ comment, videoId, currentUser, videoAuthorId, isAdmin, onViewUser, onDelete, onLogin, showToast }) => {
+    const [isLiked, setIsLiked] = useState(false);
+    const [likeCount, setLikeCount] = useState(0);
+    const [isReplying, setIsReplying] = useState(false);
+    const [replyText, setReplyText] = useState('');
+    const [isSubmittingReply, setIsSubmittingReply] = useState(false);
+    const [isEditing, setIsEditing] = useState(false);
+    const [editText, setEditText] = useState('');
+    const [showMenu, setShowMenu] = useState(false);
+    // Reply type is now imported from ../types
+    const [replies, setReplies] = useState<Reply[]>([]);
+
+    useEffect(() => {
+        const unsubLikes = db.collection('videos').doc(videoId).collection('comments').doc(comment.id).collection('likes').onSnapshot(snap => {
+            setLikeCount(snap.size);
+            if (currentUser) setIsLiked(snap.docs.some(doc => doc.id === currentUser.uid));
+        });
+        const unsubReplies = db.collection('videos').doc(videoId).collection('comments').doc(comment.id).collection('replies').orderBy('createdAt', 'asc').onSnapshot(snap => {
+            // Mapping to imported Reply type
+            setReplies(snap.docs.map(doc => ({ id: doc.id, ...doc.data(), createdAt: doc.data().createdAt?.toDate() || new Date() } as Reply)));
+        });
+        return () => { unsubLikes(); unsubReplies(); };
+    }, [videoId, comment.id, currentUser]);
+
+    const handleLike = async () => {
+        if (!currentUser) { onLogin(); return; }
+        const ref = db.collection('videos').doc(videoId).collection('comments').doc(comment.id).collection('likes').doc(currentUser.uid);
+        if (isLiked) await ref.delete();
+        else await ref.set({ createdAt: serverTimestamp(), userId: currentUser.uid });
+    };
+
+    const handleReplySubmit = async () => {
+        if (!replyText.trim() || !currentUser) return;
+        setIsSubmittingReply(true);
+        try {
+            await db.collection('videos').doc(videoId).collection('comments').doc(comment.id).collection('replies').add({
+                content: replyText.trim(),
+                authorId: currentUser.uid,
+                authorName: currentUser.name,
+                authorProfilePicUrl: currentUser.profilePicUrl,
+                createdAt: serverTimestamp()
+            });
+            setReplyText('');
+            setIsReplying(false);
+        } catch (e) { showToast("Failed to reply", "error"); }
+        finally { setIsSubmittingReply(false); }
+    };
+
+    const saveEdit = async () => {
+        if (!editText.trim()) return;
+        try {
+            await db.collection('videos').doc(videoId).collection('comments').doc(comment.id).update({ content: editText.trim() });
+            setIsEditing(false);
+            showToast("Comment updated", "success");
+        } catch (e) { showToast("Failed to update", "error"); }
+    };
+
+    return (
+        <div className="flex items-start gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <div className="flex flex-col items-center">
+                <img src={comment.authorProfilePicUrl} className="w-9 h-9 rounded-full object-cover ring-2 ring-white shadow-sm" onClick={() => onViewUser(comment.authorId)} alt="" />
+                {replies.length > 0 && <div className="w-0.5 flex-grow bg-gray-100 rounded-full my-1"></div>}
+            </div>
+            <div className="flex-grow min-w-0">
+                <div className={`rounded-2xl rounded-tl-none p-3 relative border transition-all ${isEditing ? 'bg-white border-blue-200 shadow-lg' : 'bg-slate-50 border-slate-100'}`}>
+                    <div className="flex justify-between items-start mb-1">
+                        <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-xs text-gray-900">@{comment.authorName}</span>
+                            {videoAuthorId === comment.authorId && <span className="bg-red-600 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black uppercase">Author</span>}
+                            <span className="text-[9px] text-gray-400 font-medium">{timeAgo(comment.createdAt)}</span>
+                        </div>
+                        {(isAdmin || currentUser?.uid === comment.authorId) && !isEditing && (
+                            <button onClick={() => setShowMenu(!showMenu)} className="text-gray-400"><span className="material-symbols-outlined text-lg">more_horiz</span></button>
+                        )}
+                        {showMenu && (
+                            <div className="absolute right-0 top-8 bg-white shadow-xl border rounded-xl z-20 overflow-hidden text-xs font-bold">
+                                <button onClick={() => { setIsEditing(true); setEditText(comment.content); setShowMenu(false); }} className="w-full text-left px-4 py-2.5 hover:bg-gray-50 flex items-center gap-2"><span className="material-symbols-outlined text-sm">edit</span> Edit</button>
+                                <button onClick={() => { onDelete(comment.id); setShowMenu(false); }} className="w-full text-left px-4 py-2.5 text-red-600 hover:bg-red-50 flex items-center gap-2"><span className="material-symbols-outlined text-sm">delete</span> Delete</button>
+                            </div>
+                        )}
+                    </div>
+                    {isEditing ? (
+                        <div className="mt-1">
+                            <textarea value={editText} onChange={(e) => setEditText(e.target.value)} className="w-full p-2 text-sm border rounded-xl outline-none" autoFocus />
+                            <div className="flex justify-end gap-2 mt-2">
+                                <button onClick={() => setIsEditing(false)} className="text-xs text-gray-500 font-bold">Cancel</button>
+                                <button onClick={saveEdit} className="text-xs text-blue-600 font-bold">Save</button>
+                            </div>
+                        </div>
+                    ) : <p className="text-sm text-gray-800 leading-relaxed break-words">{comment.content}</p>}
+                </div>
+                <div className="flex items-center gap-5 mt-1.5 ml-1">
+                    <button onClick={handleLike} className={`flex items-center gap-1 text-[11px] font-black uppercase tracking-wider ${isLiked ? 'text-red-500' : 'text-gray-500'}`}>
+                        <span className="material-symbols-outlined text-lg" style={{ fontVariationSettings: `'FILL' ${isLiked ? 1 : 0}` }}>favorite</span>
+                        {likeCount > 0 ? formatCount(likeCount) : 'Like'}
+                    </button>
+                    <button onClick={() => setIsReplying(!isReplying)} className="flex items-center gap-1 text-[11px] font-black uppercase tracking-wider text-gray-500">
+                        <span className="material-symbols-outlined text-lg">reply</span>
+                        Reply
+                    </button>
+                </div>
+                {isReplying && (
+                    <div className="mt-3 flex gap-2 animate-in slide-in-from-top-1">
+                        <input value={replyText} onChange={e => setReplyText(e.target.value)} placeholder={`Reply to ${comment.authorName}...`} className="flex-1 bg-gray-100 p-2 rounded-full text-xs outline-none" autoFocus />
+                        <button onClick={handleReplySubmit} disabled={isSubmittingReply || !replyText.trim()} className="text-blue-600 font-black text-[11px] uppercase pr-2">Post</button>
+                    </div>
+                )}
+                {replies.length > 0 && <div className="mt-3 flex flex-col gap-3">{replies.map(r => <VideoReplyItem key={r.id} reply={r} videoId={videoId} commentId={comment.id} currentUser={currentUser} isVideoAuthor={videoAuthorId === r.authorId} isAdmin={isAdmin} onViewUser={onViewUser} showToast={showToast} />)}</div>}
+            </div>
+        </div>
+    );
+};
+
 const VideoCard: React.FC<{
     video: VideoPost;
     currentUser: User | null;
@@ -46,39 +265,21 @@ const VideoCard: React.FC<{
     const { showToast } = useToast();
 
     useEffect(() => {
-        const handleGlobalMute = () => {
-            setIsMuted(true);
-        };
+        const handleGlobalMute = () => setIsMuted(true);
         window.addEventListener('mute-all-video-previews', handleGlobalMute);
         return () => window.removeEventListener('mute-all-video-previews', handleGlobalMute);
     }, []);
 
     useEffect(() => {
-        const observer = new IntersectionObserver(
-            ([entry]) => {
-                setIsVisible(entry.isIntersecting);
-            },
-            { threshold: 0.6 } 
-        );
-
-        if (cardRef.current) {
-            observer.observe(cardRef.current);
-        }
-
+        const observer = new IntersectionObserver(([entry]) => setIsVisible(entry.isIntersecting), { threshold: 0.6 });
+        if (cardRef.current) observer.observe(cardRef.current);
         return () => observer.disconnect();
     }, []);
 
     useEffect(() => {
         if (videoPreviewRef.current) {
-            if (isVisible) {
-                videoPreviewRef.current.play().catch(() => {
-                    console.debug("Autoplay blocked");
-                });
-            } else {
-                videoPreviewRef.current.pause();
-                videoPreviewRef.current.currentTime = 0;
-                setIsMuted(true); 
-            }
+            if (isVisible) videoPreviewRef.current.play().catch(() => {});
+            else { videoPreviewRef.current.pause(); videoPreviewRef.current.currentTime = 0; setIsMuted(true); }
         }
     }, [isVisible]);
 
@@ -86,18 +287,11 @@ const VideoCard: React.FC<{
         const likesRef = db.collection('videos').doc(video.id).collection('likes');
         const unsubLikes = likesRef.onSnapshot((snapshot) => {
             setLikeCount(snapshot.size);
-            if (currentUser) {
-                setIsLiked(snapshot.docs.some(doc => doc.id === currentUser.uid));
-            } else {
-                setIsLiked(false);
-            }
+            if (currentUser) setIsLiked(snapshot.docs.some(doc => doc.id === currentUser.uid));
+            else setIsLiked(false);
         });
-
         const commentsRef = db.collection('videos').doc(video.id).collection('comments');
-        const unsubComments = commentsRef.onSnapshot((snapshot) => {
-            setCommentCount(snapshot.size);
-        });
-
+        const unsubComments = commentsRef.onSnapshot((snapshot) => setCommentCount(snapshot.size));
         return () => { unsubLikes(); unsubComments(); };
     }, [video.id, currentUser]);
 
@@ -106,25 +300,13 @@ const VideoCard: React.FC<{
         if (!currentUser) { onLogin(); return; }
         const likeRef = db.collection('videos').doc(video.id).collection('likes').doc(currentUser.uid);
         const batch = db.batch();
-        
         try {
-            if (isLiked) {
-                await likeRef.delete();
-            } else {
+            if (isLiked) await likeRef.delete();
+            else {
                 batch.set(likeRef, { createdAt: serverTimestamp() });
-                
-                // Notification for author
                 if (currentUser.uid !== video.authorId) {
-                    const notifRef = db.collection('users').doc(video.authorId).collection('notifications').doc();
-                    batch.set(notifRef, {
-                        type: 'new_like',
-                        fromUserId: currentUser.uid,
-                        fromUserName: currentUser.name,
-                        fromUserProfilePicUrl: currentUser.profilePicUrl,
-                        videoId: video.id,
-                        postTitle: video.title,
-                        createdAt: serverTimestamp(),
-                        read: false
+                    batch.set(db.collection('users').doc(video.authorId).collection('notifications').doc(), {
+                        type: 'new_like', fromUserId: currentUser.uid, fromUserName: currentUser.name, fromUserProfilePicUrl: currentUser.profilePicUrl, videoId: video.id, postTitle: video.title, createdAt: serverTimestamp(), read: false
                     });
                 }
                 await batch.commit();
@@ -132,106 +314,69 @@ const VideoCard: React.FC<{
         } catch (error) { showToast("Action failed", "error"); }
     };
 
-    const toggleMute = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        const nextMuteState = !isMuted;
-        if (!nextMuteState) {
-            window.dispatchEvent(new CustomEvent('mute-all-video-previews'));
-        }
-        setIsMuted(nextMuteState);
-    };
-
-    const handleCardClick = () => {
-        setIsMuted(true);
-        window.dispatchEvent(new CustomEvent('mute-all-video-previews'));
-        onViewVideo(video.id);
-    };
-
-    const handleShare = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        const shareUrl = `${window.location.origin}/?videoId=${video.id}`;
-        const shareText = `🚩 *न्यूज़ अपडेट:* *${video.title}*\n\n👉 *पूरी वीडियो यहाँ देखें:* ${shareUrl}\n\n*"आपकी खबर, आपकी पहचान – Public Tak News App"*`;
-        
-        db.collection('videos').doc(video.id).update({ shareCount: increment(1) }).catch(() => {});
-        
-        // Notification for author on share
-        if (currentUser && currentUser.uid !== video.authorId) {
-            db.collection('users').doc(video.authorId).collection('notifications').add({
-                type: 'new_share',
-                fromUserId: currentUser.uid,
-                fromUserName: currentUser.name,
-                fromUserProfilePicUrl: currentUser.profilePicUrl,
-                videoId: video.id,
-                postTitle: video.title,
-                createdAt: serverTimestamp(),
-                read: false
-            }).catch(console.error);
-        }
-
-        window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank');
-    };
-
-    const timeAgo = useMemo(() => {
-        if (!video.createdAt) return 'N/A';
-        const now = new Date();
-        const seconds = Math.floor((now.getTime() - video.createdAt.getTime()) / 1000);
-        if (seconds < 60) return "Just now";
-        if (seconds < 3600) return Math.floor(seconds / 60) + "m ago";
-        if (seconds < 3600 * 24) return Math.floor(seconds / 3600) + "h ago";
-        return Math.floor(seconds / (3600 * 24)) + "d ago";
-    }, [video.createdAt]);
-
     return (
-        <div ref={cardRef} onClick={handleCardClick} className="glass-card overflow-hidden transition-all duration-300 cursor-pointer flex flex-col h-full group hover:shadow-xl border border-gray-100 relative bg-white">
-            <div className="p-3 flex items-center gap-2">
-                <img onClick={(e) => { e.stopPropagation(); onViewUser(video.authorId); }} src={video.authorProfilePicUrl} className="w-8 h-8 rounded-full object-cover ring-1 ring-gray-100" alt="" />
+        <div ref={cardRef} onClick={() => { setIsMuted(true); window.dispatchEvent(new CustomEvent('mute-all-video-previews')); onViewVideo(video.id); }} className="bg-white md:glass-card overflow-hidden transition-all duration-300 cursor-pointer flex flex-col h-full group md:hover:shadow-xl border-y md:border border-gray-100 relative rounded-none md:rounded-2xl">
+            <div className="p-3 flex items-center gap-3">
+                <img onClick={(e) => { e.stopPropagation(); onViewUser(video.authorId); }} src={video.authorProfilePicUrl} className="w-9 h-9 rounded-full object-cover ring-2 ring-gray-50" alt="" />
                 <div className="flex-grow min-w-0">
                     <div className="flex items-center gap-2">
-                        <p className="font-bold text-gray-800 text-sm truncate">@{video.authorName}</p>
+                        <p className="font-bold text-gray-900 text-sm truncate">@{video.authorName}</p>
                         {(!currentUser || (currentUser.uid !== video.authorId && !isFollowing)) && (
-                            <button onClick={(e) => { e.stopPropagation(); handleFollowToggle(video.authorId, video.authorName, video.authorProfilePicUrl); }} className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full transition-all bg-red-600 text-white shadow-sm hover:bg-red-700 active:scale-95">Follow</button>
+                            <button onClick={(e) => { e.stopPropagation(); handleFollowToggle(video.authorId, video.authorName, video.authorProfilePicUrl); }} className="px-2.5 py-0.5 text-[9px] font-black uppercase tracking-widest rounded-full transition-all bg-red-600 text-white shadow-sm active:scale-95">Follow</button>
                         )}
                     </div>
-                    <p className="text-[10px] text-gray-400">{timeAgo}</p>
+                    <p className="text-[10px] text-gray-400 font-medium uppercase tracking-tight">{timeAgo(video.createdAt)}</p>
                 </div>
             </div>
 
             <div className="relative aspect-video bg-black overflow-hidden flex items-center justify-center">
-                <img src={video.thumbnailUrl} className={`w-full h-full object-cover transition-opacity duration-500 ${isVisible ? 'opacity-0' : 'opacity-90'} group-hover:scale-105`} alt="" />
+                <img src={video.thumbnailUrl} className={`w-full h-full object-cover transition-opacity duration-500 ${isVisible ? 'opacity-0' : 'opacity-90'} md:group-hover:scale-105`} alt="" />
                 <video ref={videoPreviewRef} src={video.videoUrl} muted={isMuted} loop playsInline className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ${isVisible ? 'opacity-100' : 'opacity-0'}`} />
                 <div className={`absolute inset-0 flex items-center justify-center transition-opacity duration-300 ${isVisible ? 'opacity-0' : 'opacity-100'}`}>
-                    <div className="bg-white/20 backdrop-blur-md rounded-full p-3 border border-white/30 transform group-hover:scale-110 transition-transform"><span className="material-symbols-outlined text-white text-3xl">play_arrow</span></div>
+                    <div className="bg-white/20 backdrop-blur-md rounded-full p-4 border border-white/30 transform md:group-hover:scale-110 transition-transform shadow-xl"><span className="material-symbols-outlined text-white text-3xl">play_arrow</span></div>
                 </div>
                 {isVisible && (
-                    <button onClick={toggleMute} className="absolute bottom-3 right-3 z-20 w-10 h-10 bg-black/40 backdrop-blur-xl border border-white/20 text-white rounded-full flex items-center justify-center hover:bg-black/60 transition-all active:scale-90 shadow-xl"><span className="material-symbols-outlined text-xl">{isMuted ? 'volume_off' : 'volume_up'}</span></button>
+                    <button onClick={(e) => { e.stopPropagation(); setIsMuted(!isMuted); }} className="absolute bottom-3 right-3 z-20 w-10 h-10 bg-black/40 backdrop-blur-xl border border-white/20 text-white rounded-full flex items-center justify-center hover:bg-black/60 transition-all active:scale-90 shadow-xl"><span className="material-symbols-outlined text-xl">{isMuted ? 'volume_off' : 'volume_up'}</span></button>
                 )}
-                <div className="absolute top-2 right-2 bg-black/50 backdrop-blur-md text-white text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-widest">Video</div>
+                <div className="absolute top-2 right-2 bg-black/50 backdrop-blur-md text-white text-[8px] px-1.5 py-0.5 rounded font-black uppercase tracking-widest">Video</div>
             </div>
 
-            <div className="p-4 flex flex-col flex-grow"><h3 className="text-sm font-bold text-gray-800 mb-2 line-clamp-2 leading-snug group-hover:text-red-600 transition-colors">{video.title}</h3></div>
+            <div className="p-4 flex flex-col flex-grow"><h3 className="text-lg font-extrabold text-gray-900 mb-2 line-clamp-2 leading-tight group-hover:text-red-600 transition-colors">{video.title}</h3></div>
 
             <div className="px-4 py-2 border-t border-gray-50 flex justify-between items-center text-gray-400 bg-white mt-auto">
-                <div className="flex items-center gap-2">
-                    <div className="flex items-center gap-1 p-2" title="Views"><span className="material-symbols-outlined text-lg">visibility</span><span className="text-xs font-semibold">{formatCount(video.viewCount || 0)}</span></div>
-                    <button onClick={handleLike} className={`flex items-center gap-1 p-2 rounded-full hover:bg-red-50 transition-colors ${isLiked ? 'text-red-500' : ''}`}><span className="material-symbols-outlined text-lg" style={{ fontVariationSettings: `'FILL' ${isLiked ? 1 : 0}` }}>favorite</span><span className="text-xs font-semibold">{formatCount(likeCount)}</span></button>
-                    <div className="flex items-center gap-1 p-2"><span className="material-symbols-outlined text-lg">chat_bubble</span><span className="text-xs font-semibold">{formatCount(commentCount)}</span></div>
-                    <button onClick={handleShare} className="flex items-center gap-1 text-green-600 p-2 rounded-full hover:bg-green-50"><i className="fa-brands fa-whatsapp text-lg"></i><span className="text-xs font-semibold">{formatCount(video.shareCount || 0)}</span></button>
+                <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-1.5" title="Views"><span className="material-symbols-outlined text-[22px]">visibility</span><span className="text-xs font-bold">{formatCount(video.viewCount || 0)}</span></div>
+                    <button onClick={handleLike} className={`flex items-center gap-1.5 transition-colors ${isLiked ? 'text-red-500' : ''}`}><span className="material-symbols-outlined text-[22px]" style={{ fontVariationSettings: `'FILL' ${isLiked ? 1 : 0}` }}>favorite</span><span className="text-xs font-bold">{formatCount(likeCount)}</span></button>
+                    <div className="flex items-center gap-1.5"><span className="material-symbols-outlined text-[22px]">chat_bubble</span><span className="text-xs font-bold">{formatCount(commentCount)}</span></div>
                 </div>
+                <button onClick={(e) => { e.stopPropagation(); window.open(`https://wa.me/?text=${encodeURIComponent('🚩 Watch this news: ' + window.location.origin + '/?videoId=' + video.id)}`, '_blank'); }} className="text-green-600 p-1.5 active:scale-90 transition-all"><i className="fa-brands fa-whatsapp text-xl"></i></button>
             </div>
         </div>
     );
 };
 
-// --- Main VideosPage Component ---
+interface ReelItemProps {
+    video: VideoPost;
+    isActive: boolean;
+    currentUser: User | null;
+    onLogin: () => void;
+    onNavigate: (view: View, params?: any) => void;
+    isFollowing: boolean;
+    handleFollowToggle: (targetUserId: string, targetUserName: string, targetUserProfilePicUrl: string) => void;
+    onDeleteVideo: (video: VideoPost) => void;
+}
+
 const VideosPage: React.FC<VideosPageProps> = ({ onNavigate, currentUser, onLogin, videoId, isCurrentView }) => {
     const [videos, setVideos] = useState<VideoPost[]>([]);
     const [loading, setLoading] = useState(true);
     const [activeReelIndex, setActiveReelIndex] = useState<number | null>(null);
     const [followingList, setFollowingList] = useState<string[]>([]);
+    const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+    const [videoToDelete, setVideoToDelete] = useState<VideoPost | null>(null);
+    
     const { t } = useLanguage();
     const { showToast } = useToast();
     const containerRef = useRef<HTMLDivElement>(null);
-    const mobileSearchInputRef = useRef<HTMLInputElement>(null);
     const hasInitialPlayed = useRef(false);
 
     const [selectedCategory, setSelectedCategory] = useState('Recent News');
@@ -240,99 +385,77 @@ const VideosPage: React.FC<VideosPageProps> = ({ onNavigate, currentUser, onLogi
     const [selectedBlock, setSelectedBlock] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
     const [isFlatView, setIsFlatView] = useState(false);
-    const [showMobileSearch, setShowMobileSearch] = useState(false);
 
     const NEAR_ME = 'Near Me';
+
+    const displayCategories: CategoryItem[] = useMemo(() => {
+        const items: CategoryItem[] = [];
+        items.push({ id: NEAR_ME, label: t('nearMe') || 'Near Me', icon: 'my_location' });
+        newsCategories.forEach(cat => {
+            items.push({ id: cat, label: t(cat.toLowerCase()), icon: cat === 'Recent News' ? 'local_fire_department' : undefined });
+        });
+        return items;
+    }, [t]);
+
+    const handleFollowToggle = useCallback(async (targetUserId: string, targetUserName: string, targetUserProfilePicUrl: string) => {
+        if (!currentUser) { onLogin(); return; }
+        const currentUserRef = db.collection('users').doc(currentUser.uid);
+        const targetUserRef = db.collection('users').doc(targetUserId);
+        const isFollowing = followingList.includes(targetUserId);
+        try {
+            const batch = db.batch();
+            if (isFollowing) {
+                batch.delete(currentUserRef.collection('following').doc(targetUserId));
+                batch.delete(targetUserRef.collection('followers').doc(currentUser.uid));
+            } else {
+                batch.set(currentUserRef.collection('following').doc(targetUserId), { followedAt: serverTimestamp() });
+                batch.set(targetUserRef.collection('followers').doc(currentUser.uid), { followedAt: serverTimestamp() });
+                batch.set(targetUserRef.collection('notifications').doc(), {
+                    type: 'new_follower', fromUserId: currentUser.uid, fromUserName: currentUser.name, fromUserProfilePicUrl: currentUser.profilePicUrl, createdAt: serverTimestamp(), read: false
+                });
+            }
+            await batch.commit();
+        } catch (error) { showToast("Action failed", "error"); }
+    }, [currentUser, followingList, onLogin, showToast]);
 
     useEffect(() => {
         const unsub = db.collection("videos").orderBy("createdAt", "desc").onSnapshot(snap => {
             const fetched = snap.docs.map(doc => ({ id: doc.id, ...doc.data(), createdAt: doc.data().createdAt?.toDate() || null } as VideoPost));
-            setVideos(prev => {
-                if (activeReelIndex !== null) return prev;
-                if (videoId) {
-                    const exists = fetched.find(v => v.id === videoId);
-                    if (!exists && prev.length > 0) {
-                        const specific = prev.find(v => v.id === videoId);
-                        if (specific) return [specific, ...fetched.filter(v => v.id !== videoId)];
-                    }
-                }
-                return fetched;
-            });
+            setVideos(fetched);
             setLoading(false);
         });
         return () => unsub();
-    }, [activeReelIndex, videoId]);
+    }, []);
 
     const updateUrlWithVideoId = useCallback((id: string | null) => {
         const url = new URL(window.location.href);
-        if (id) url.searchParams.set('videoId', id);
-        else url.searchParams.delete('videoId');
+        if (id) url.searchParams.set('videoId', id); else url.searchParams.delete('videoId');
         window.history.replaceState({ ...window.history.state, videoId: id }, '', url.toString());
     }, []);
 
-    const openVideoReel = useCallback((id: string) => {
-        const idx = videos.findIndex(v => v.id === id);
-        if (idx !== -1) {
-            window.dispatchEvent(new CustomEvent('mute-all-video-previews'));
-            setActiveReelIndex(idx);
-            updateUrlWithVideoId(id);
-        }
-    }, [videos, updateUrlWithVideoId]);
-
     useEffect(() => {
         if (activeReelIndex !== null && containerRef.current) {
-            const container = containerRef.current;
-            const performScroll = () => {
-                const height = container.clientHeight;
-                if (height > 0) container.scrollTo({ top: activeReelIndex * height, behavior: 'instant' });
-                else requestAnimationFrame(performScroll);
-            };
-            setTimeout(() => requestAnimationFrame(performScroll), 50);
+            const h = containerRef.current.clientHeight;
+            if (h > 0) containerRef.current.scrollTo({ top: activeReelIndex * h, behavior: 'instant' });
         }
     }, [activeReelIndex]);
 
     useEffect(() => {
-        const checkAndOpenDirectVideo = async () => {
-            if (isCurrentView && videoId && !hasInitialPlayed.current) {
-                let idx = videos.findIndex(v => v.id === videoId);
-                if (idx === -1) {
-                    try {
-                        const doc = await db.collection('videos').doc(videoId).get();
-                        if (doc.exists) {
-                            const videoData = { id: doc.id, ...doc.data(), createdAt: doc.data()?.createdAt?.toDate() || null } as VideoPost;
-                            setVideos(prev => [videoData, ...prev]);
-                            idx = 0;
-                        }
-                    } catch (e) { console.error("Failed shared video:", e); }
-                }
-                if (idx !== -1) {
-                    window.dispatchEvent(new CustomEvent('mute-all-video-previews'));
-                    setActiveReelIndex(idx);
-                }
-                hasInitialPlayed.current = true;
-            }
-            if (isCurrentView && !videoId) hasInitialPlayed.current = true;
-        };
-        checkAndOpenDirectVideo();
-        if (!isCurrentView) hasInitialPlayed.current = false;
+        if (isCurrentView && videoId && !hasInitialPlayed.current && videos.length > 0) {
+            const idx = videos.findIndex(v => v.id === videoId);
+            if (idx !== -1) setActiveReelIndex(idx);
+            hasInitialPlayed.current = true;
+        }
     }, [isCurrentView, videos.length, videoId]);
 
     useEffect(() => {
         if (currentUser) {
-            const followingRef = db.collection('users').doc(currentUser.uid).collection('following');
-            const unsubscribeFollowing = followingRef.onSnapshot((snapshot) => setFollowingList(snapshot.docs.map(doc => doc.id)));
-            return () => unsubscribeFollowing();
+            const unsub = db.collection('users').doc(currentUser.uid).collection('following').onSnapshot(snap => setFollowingList(snap.docs.map(doc => doc.id)));
+            return () => unsub();
         } else setFollowingList([]);
     }, [currentUser]);
 
-    const displayCategories: CategoryItem[] = useMemo(() => {
-        const items: CategoryItem[] = [{ id: NEAR_ME, label: t('nearMe') || 'Near Me', icon: 'my_location' }];
-        newsCategories.forEach(cat => items.push({ id: cat, label: t(cat.toLowerCase()), icon: cat === 'Recent News' ? 'local_fire_department' : undefined }));
-        return items;
-    }, [t]);
-
     const handleCategorySelect = (category: string) => {
-        if (category !== 'Recent News' && !currentUser && category !== NEAR_ME) { onLogin(); return; }
         if (category === NEAR_ME) {
             if (!currentUser) { onLogin(); return; }
             if (!currentUser.preferredState) { showToast(t('pleaseSetLocation'), "info"); onNavigate(View.EditProfile); return; }
@@ -343,6 +466,7 @@ const VideosPage: React.FC<VideosPageProps> = ({ onNavigate, currentUser, onLogi
             setIsFlatView(false);
             return;
         }
+        if (category !== 'Recent News' && !currentUser) { onLogin(); return; }
         setSelectedCategory(category);
         setIsFlatView(category !== 'Recent News');
     };
@@ -350,7 +474,7 @@ const VideosPage: React.FC<VideosPageProps> = ({ onNavigate, currentUser, onLogi
     const groupedSections = useMemo(() => {
         if (isFlatView || searchQuery.trim()) return [];
         let base = videos;
-        if (selectedState) base = base.filter(v => v.state === selectedState && (!selectedDistrict || v.district === selectedDistrict) && (!selectedBlock || v.block === selectedBlock));
+        if (selectedState) base = base.filter(v => v.state === selectedState && (!selectedDistrict || v.district === selectedDistrict));
         const sections = [];
         if (base.length > 0) sections.push({ title: 'Recent News', key: 'Recent News', posts: base.slice(0, 8) });
         newsCategories.filter(c => c !== 'Recent News').forEach(cat => {
@@ -358,199 +482,63 @@ const VideosPage: React.FC<VideosPageProps> = ({ onNavigate, currentUser, onLogi
             if (catPosts.length > 0) sections.push({ title: cat, key: cat, posts: catPosts.slice(0, 8) });
         });
         return sections;
-    }, [videos, isFlatView, selectedState, selectedDistrict, selectedBlock, searchQuery]);
+    }, [videos, isFlatView, selectedState, selectedDistrict, searchQuery]);
 
     const filteredVideos = useMemo(() => {
-        let result = videos;
-        if (searchQuery.trim()) {
-            const q = searchQuery.toLowerCase();
-            result = result.filter(v => (v.title || '').toLowerCase().includes(q) || (v.authorName || '').toLowerCase().includes(q));
-        }
-        if (selectedCategory !== 'Recent News' && selectedCategory !== NEAR_ME) result = result.filter(v => v.category === selectedCategory);
-        if (selectedState) result = result.filter(v => v.state === selectedState && (!selectedDistrict || v.district === selectedDistrict) && (!selectedBlock || v.block === selectedBlock));
-        return result;
-    }, [videos, selectedCategory, selectedState, selectedDistrict, selectedBlock, searchQuery]);
+        let res = videos;
+        if (searchQuery.trim()) res = res.filter(v => v.title.toLowerCase().includes(searchQuery.toLowerCase()));
+        if (selectedCategory !== 'Recent News' && selectedCategory !== NEAR_ME) res = res.filter(v => v.category === selectedCategory);
+        if (selectedState) res = res.filter(v => v.state === selectedState);
+        return res;
+    }, [videos, selectedCategory, selectedState, searchQuery]);
 
-    const handleFollowToggle = useCallback(async (targetUserId: string, targetUserName: string, targetUserProfilePicUrl: string) => {
-        if (!currentUser) { onLogin(); return; }
-        const followRef = db.collection('users').doc(currentUser.uid).collection('following').doc(targetUserId);
-        const followerRef = db.collection('users').doc(targetUserId).collection('followers').doc(currentUser.uid);
-        const isFollowing = followingList.includes(targetUserId);
-        const batch = db.batch();
-        if (isFollowing) { batch.delete(followRef); batch.delete(followerRef); }
-        else {
-            batch.set(followRef, { followedAt: serverTimestamp() });
-            batch.set(followerRef, { followedAt: serverTimestamp() });
-            batch.set(db.collection('users').doc(targetUserId).collection('notifications').doc(), {
-                type: 'new_follower', fromUserId: currentUser.uid, fromUserName: currentUser.name, fromUserProfilePicUrl: currentUser.profilePicUrl, createdAt: serverTimestamp(), read: false
-            });
-        }
-        await batch.commit();
-    }, [currentUser, followingList, onLogin]);
-
-    const handleScroll = useCallback(() => {
-        if (!containerRef.current) return;
-        const container = containerRef.current;
-        const scrollPos = container.scrollTop;
-        const height = container.clientHeight;
-        if (height <= 0) return;
-        const index = Math.round(scrollPos / height);
-        if (index !== activeReelIndex && index >= 0 && index < videos.length) {
-            setActiveReelIndex(index);
-            const currentVideo = videos[index];
-            if (currentVideo) updateUrlWithVideoId(currentVideo.id);
-        }
-    }, [activeReelIndex, videos, updateUrlWithVideoId]);
-
-    const handleCloseReel = () => {
-        setActiveReelIndex(null);
-        updateUrlWithVideoId(null);
-    };
-
-    const handleReelSearchRequest = () => {
-        handleCloseReel();
-        setShowMobileSearch(true);
-        setTimeout(() => mobileSearchInputRef.current?.focus(), 300);
+    const handleConfirmDeleteVideo = async () => {
+        if (!videoToDelete) return;
+        try {
+            await db.collection("videos").doc(videoToDelete.id).delete();
+            if (videoToDelete.thumbnailUrl?.includes('firebasestorage')) {
+                storage.refFromURL(videoToDelete.thumbnailUrl).delete().catch(() => {});
+            }
+            if (videoToDelete.videoUrl?.includes('firebasestorage')) {
+                storage.refFromURL(videoToDelete.videoUrl).delete().catch(() => {});
+            }
+            showToast("Video deleted successfully.", "success");
+            setActiveReelIndex(null);
+        } catch (e) { showToast("Failed to delete.", "error"); }
+        finally { setIsDeleteModalOpen(false); setVideoToDelete(null); }
     };
 
     return (
         <div className="flex flex-col h-full bg-white relative">
-            <SEO title="Videos" description="Watch hyper-local news and trending video updates." />
-
-            {/* Desktop Header & Filters */}
-            <div className="hidden md:block bg-white/80 backdrop-blur-md sticky top-0 z-40 border-b border-gray-200">
-                <div className="max-w-7xl mx-auto px-4 py-4 space-y-4">
-                    <div className="flex items-center gap-4">
-                        <button onClick={() => onNavigate(View.Main)} className="p-2 rounded-full hover:bg-gray-100 transition-colors text-gray-800 flex items-center justify-center">
-                            <span className="material-symbols-outlined">arrow_back</span>
-                        </button>
-                        <div className="flex-grow relative">
-                            <input 
-                                type="text" 
-                                placeholder="Search videos only..." 
-                                value={searchQuery} 
-                                onChange={(e) => setSearchQuery(e.target.value)} 
-                                className="w-full pl-11 pr-10 py-2.5 bg-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-red-100 border border-transparent focus:border-red-200 transition-all" 
-                            />
-                            <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400">search</span>
-                            {searchQuery && (
-                                <button 
-                                    onClick={() => setSearchQuery('')}
-                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-                                >
-                                    <span className="material-symbols-outlined text-xl">close</span>
-                                </button>
-                            )}
-                        </div>
-                        <button onClick={() => onNavigate(View.Settings)} className="p-2.5 bg-gray-100 hover:bg-gray-200 rounded-xl transition-all active:scale-95 shadow-sm flex items-center justify-center" title="Settings">
-                            <span className="material-symbols-outlined text-gray-700">settings</span>
-                        </button>
-                    </div>
-                    <div className="overflow-x-auto scrollbar-hide flex gap-1">
-                        {displayCategories.map(cat => (
-                            <button key={cat.id} onClick={() => handleCategorySelect(cat.id)} className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all ${selectedCategory === cat.id ? 'bg-red-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}>{cat.label}</button>
-                        ))}
-                    </div>
+            <SEO title="Videos" description="Watch hyper-local news updates." />
+            
+            <div className="hidden md:block bg-white/80 backdrop-blur-md sticky top-0 z-40 border-b border-gray-200 p-4">
+                <div className="max-w-7xl mx-auto flex items-center gap-4">
+                    <button onClick={() => onNavigate(View.Main)} className="p-2 rounded-full hover:bg-gray-100"><span className="material-symbols-outlined">arrow_back</span></button>
+                    <input type="text" placeholder="Search videos..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="flex-grow bg-gray-100 px-4 py-2 rounded-xl outline-none" />
                 </div>
             </div>
 
-            {/* Mobile Header & Local Search */}
             <div className="md:hidden">
-                {!showMobileSearch ? (
-                    <Header 
-                        title="Videos" 
-                        showBackButton 
-                        onBack={() => onNavigate(View.Main)} 
-                        logoUrl={APP_LOGO_URL} 
-                        onSearch={() => setShowMobileSearch(true)} 
-                        showSettingsButton={true} 
-                        onSettings={() => onNavigate(View.Settings)}
-                    />
-                ) : (
-                    <div className="h-14 flex items-center px-3 gap-3 bg-white border-b border-gray-100 animate-in slide-in-from-top-1 duration-200">
-                        <button onClick={() => { setShowMobileSearch(false); setSearchQuery(''); }} className="text-gray-500">
-                            <span className="material-symbols-outlined">arrow_back</span>
-                        </button>
-                        <div className="flex-grow relative">
-                            <input 
-                                ref={mobileSearchInputRef}
-                                type="text" 
-                                placeholder="Search videos..." 
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full bg-gray-100 py-2 pl-10 pr-10 rounded-full text-sm outline-none focus:ring-2 focus:ring-red-100"
-                                autoFocus
-                            />
-                            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xl">search</span>
-                            {searchQuery && (
-                                <button 
-                                    onClick={() => setSearchQuery('')}
-                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
-                                >
-                                    <span className="material-symbols-outlined text-xl">close</span>
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                )}
-                <div className="sticky top-0 z-20">
-                    <Categories categories={displayCategories} selectedCategory={selectedCategory} onSelectCategory={handleCategorySelect} />
-                    <LocationFilter selectedState={selectedState} setSelectedState={setSelectedState} selectedDistrict={selectedDistrict} setSelectedDistrict={setSelectedDistrict} selectedBlock={selectedBlock} setSelectedBlock={setSelectedBlock} />
-                </div>
+                <Header title="Videos" showBackButton onBack={() => onNavigate(View.Main)} onSearch={() => onNavigate(View.Search, { searchMode: 'video-user' })} showSettingsButton onSettings={() => onNavigate(View.Settings)} />
+                <Categories categories={displayCategories} selectedCategory={selectedCategory} onSelectCategory={handleCategorySelect} />
+                <LocationFilter selectedState={selectedState} setSelectedState={setSelectedState} selectedDistrict={selectedDistrict} setSelectedDistrict={setSelectedDistrict} selectedBlock={selectedBlock} setSelectedBlock={setSelectedBlock} />
             </div>
 
             <main className="flex-grow overflow-y-auto pb-20 md:pb-10 bg-gray-50/30">
-                <div className="max-w-7xl mx-auto md:px-4 py-6 px-4">
-                    {loading ? (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                            {[...Array(8)].map((_, i) => <div key={i} className="glass-card aspect-video animate-pulse bg-gray-200 rounded-xl" />)}
-                        </div>
-                    ) : (
+                <div className="max-w-7xl mx-auto md:px-4 py-0 md:py-6">
+                    {loading ? <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4">{[1,2,3,4].map(i => <div key={i} className="aspect-video bg-gray-200 animate-pulse rounded-xl" />)}</div> : (
                         <>
-                            {!isFlatView && !searchQuery.trim() ? (
-                                <div className="space-y-12">
-                                    {groupedSections.map(section => (
-                                        <section key={section.title}>
-                                            <div className="flex items-center justify-between mb-6 border-b pb-4 border-gray-100">
-                                                <h2 className="text-2xl font-black text-gray-800">{t(section.key.toLowerCase()) || section.title}</h2>
-                                                <button onClick={() => { setSelectedCategory(section.key); setIsFlatView(true); }} className="text-red-600 font-bold text-sm flex items-center gap-1">View All <span className="material-symbols-outlined text-lg">arrow_forward</span></button>
-                                            </div>
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                                                {section.posts.map((video) => (
-                                                    <VideoCard key={video.id} video={video} currentUser={currentUser} onLogin={onLogin} onViewVideo={openVideoReel} onViewUser={(id) => onNavigate(View.PublicProfile, { userId: id })} isFollowing={followingList.includes(video.authorId)} handleFollowToggle={handleFollowToggle} index={0} />
-                                                ))}
-                                            </div>
-                                        </section>
-                                    ))}
-                                </div>
-                            ) : (
-                                <div>
-                                    <div className="flex items-center justify-between mb-6 border-b pb-4 border-gray-100">
-                                        <h2 className="text-2xl font-black text-gray-800">
-                                            {searchQuery ? `Video results: "${searchQuery}"` : t(selectedCategory.toLowerCase()) || selectedCategory}
-                                        </h2>
-                                        {searchQuery && (
-                                            <button 
-                                                onClick={() => { setSearchQuery(''); setShowMobileSearch(false); }}
-                                                className="text-xs font-bold text-blue-600 hover:underline"
-                                            >
-                                                Clear search
-                                            </button>
-                                        )}
+                            {!isFlatView && !searchQuery.trim() ? groupedSections.map(s => (
+                                <section key={s.title} className="mb-8">
+                                    <h2 className="px-4 py-2 font-black text-xl">{s.title}</h2>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                                        {s.posts.map(v => <VideoCard key={v.id} video={v} currentUser={currentUser} onLogin={onLogin} onViewVideo={id => { setActiveReelIndex(videos.findIndex(v => v.id === id)); updateUrlWithVideoId(id); }} onViewUser={id => onNavigate(View.PublicProfile, { userId: id })} isFollowing={followingList.includes(v.authorId)} handleFollowToggle={handleFollowToggle} index={0} />)}
                                     </div>
-                                    {filteredVideos.length > 0 ? (
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                                            {filteredVideos.map((video) => (
-                                                <VideoCard key={video.id} video={video} currentUser={currentUser} onLogin={onLogin} onViewVideo={openVideoReel} onViewUser={(id) => onNavigate(View.PublicProfile, { userId: id })} isFollowing={followingList.includes(video.authorId)} handleFollowToggle={handleFollowToggle} index={0} />
-                                            ))}
-                                        </div>
-                                    ) : (
-                                        <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-gray-200">
-                                            <span className="material-symbols-outlined text-6xl text-gray-200 mb-4">video_library_off</span>
-                                            <p className="text-gray-500 font-medium">No videos match your search.</p>
-                                            <button onClick={() => { setSearchQuery(''); setShowMobileSearch(false); }} className="mt-4 px-6 py-2 bg-red-600 text-white rounded-full font-bold shadow-lg shadow-red-200 active:scale-95 transition-all">Show all videos</button>
-                                        </div>
-                                    )}
+                                </section>
+                            )) : (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                                    {filteredVideos.map(v => <VideoCard key={v.id} video={v} currentUser={currentUser} onLogin={onLogin} onViewVideo={id => { setActiveReelIndex(videos.findIndex(v => v.id === id)); updateUrlWithVideoId(id); }} onViewUser={id => onNavigate(View.PublicProfile, { userId: id })} isFollowing={followingList.includes(v.authorId)} handleFollowToggle={handleFollowToggle} index={0} />)}
                                 </div>
                             )}
                         </>
@@ -558,52 +546,58 @@ const VideosPage: React.FC<VideosPageProps> = ({ onNavigate, currentUser, onLogi
                 </div>
             </main>
 
-            {activeReelIndex !== null && isCurrentView && (
-                <div className="fixed inset-0 z-[60] bg-black animate-in fade-in zoom-in-95 duration-300 h-screen w-screen overflow-hidden">
-                    <div ref={containerRef} onScroll={handleScroll} className="h-full w-full overflow-y-scroll snap-y snap-mandatory scrollbar-hide bg-black touch-pan-y">
-                        {videos.map((v, i) => (
-                            <ReelItem key={v.id} video={v} isActive={activeReelIndex === i} currentUser={currentUser} onLogin={onLogin} onClose={handleCloseReel} onNavigate={onNavigate} onSearchTrigger={handleReelSearchRequest} />
-                        ))}
+            {activeReelIndex !== null && (
+                <div className="fixed inset-0 z-[150] bg-black h-full w-full overflow-hidden animate-in fade-in duration-300">
+                    <div className="absolute top-0 left-0 w-full p-4 flex justify-between items-center bg-gradient-to-b from-black/80 to-transparent z-[180] pt-[calc(1rem+env(safe-area-inset-top))]">
+                        <button onClick={() => { setActiveReelIndex(null); updateUrlWithVideoId(null); }} className="p-2 text-white bg-black/20 backdrop-blur-md rounded-full active:scale-90 transition-all"><span className="material-symbols-outlined text-2xl">arrow_back</span></button>
+                        <div className="flex items-center gap-3">
+                            <button onClick={() => onNavigate(View.Search, { searchMode: 'video-user' })} className="p-2 text-white bg-black/20 backdrop-blur-md rounded-full active:scale-90 transition-all"><span className="material-symbols-outlined text-2xl">video_search</span></button>
+                            <button onClick={() => onNavigate(View.Settings)} className="p-2 text-white bg-black/20 backdrop-blur-md rounded-full active:scale-90 transition-all"><span className="material-symbols-outlined text-2xl">settings</span></button>
+                        </div>
+                    </div>
+
+                    <div ref={containerRef} onScroll={() => {
+                        if (!containerRef.current) return;
+                        const idx = Math.round(containerRef.current.scrollTop / containerRef.current.clientHeight);
+                        if (idx !== activeReelIndex && idx >= 0 && idx < videos.length) { setActiveReelIndex(idx); updateUrlWithVideoId(videos[idx].id); }
+                    }} className="h-full w-full overflow-y-scroll snap-y snap-mandatory scrollbar-hide bg-black">
+                        {videos.map((v, i) => <ReelItem key={v.id} video={v} isActive={activeReelIndex === i} currentUser={currentUser} onLogin={onLogin} onNavigate={onNavigate} isFollowing={followingList.includes(v.authorId)} handleFollowToggle={handleFollowToggle} onDeleteVideo={(vid) => { setVideoToDelete(vid); setIsDeleteModalOpen(true); }} />)}
                     </div>
                 </div>
             )}
+
+            <ConfirmationModal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)} onConfirm={handleConfirmDeleteVideo} title="Delete Video" message="Are you sure you want to delete this video news? This cannot be undone." />
         </div>
     );
 };
 
-// --- Sub-component: ReelItem ---
-const ReelItem: React.FC<{
-    video: VideoPost;
-    isActive: boolean;
-    currentUser: User | null;
-    onLogin: () => void;
-    onClose: () => void;
-    onNavigate: (view: View, params?: any) => void;
-    onSearchTrigger: () => void;
-}> = ({ video, isActive, currentUser, onLogin, onClose, onNavigate, onSearchTrigger }) => {
+const ReelItem: React.FC<ReelItemProps> = ({ video, isActive, currentUser, onLogin, onNavigate, isFollowing, handleFollowToggle, onDeleteVideo }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
-    const [isLiked, setIsLiked] = useState(false);
+    const progressRef = useRef<HTMLDivElement>(null);
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [showComments, setShowComments] = useState(false);
+    const [showActionSheet, setShowActionSheet] = useState(false);
     const [likeCount, setLikeCount] = useState(0);
     const [commentCount, setCommentCount] = useState(0);
-    const [showComments, setShowComments] = useState(false);
-    const [showSettings, setShowSettings] = useState(false);
-    const [isFollowing, setIsFollowing] = useState(false);
-    const [lastTap, setLastTap] = useState(0);
-    const [showHeartAnim, setShowHeartAnim] = useState(false);
-    const { showToast } = useToast();
-    const { t } = useLanguage();
+    const [isLiked, setIsLiked] = useState(false);
+    const [progress, setProgress] = useState(0);
+    const [isExpanded, setIsExpanded] = useState(false);
+    const [isSeeking, setIsSeeking] = useState(false);
+    const isAuthor = currentUser?.uid === video.authorId;
 
     useEffect(() => {
-        const v = videoRef.current;
-        if (!v) return;
-        if (isActive) {
-            window.dispatchEvent(new CustomEvent('stop-app-audio'));
-            window.dispatchEvent(new CustomEvent('mute-all-video-previews'));
-            v.play().catch(() => {});
-            db.collection('videos').doc(video.id).update({ viewCount: increment(1) }).catch(() => {});
-        } else {
-            v.pause();
-            v.currentTime = 0;
+        if (videoRef.current) {
+            if (isActive) { 
+                videoRef.current.play().then(() => setIsPlaying(true)).catch(() => {}); 
+                db.collection('videos').doc(video.id).update({ viewCount: increment(1) }); 
+            }
+            else { 
+                videoRef.current.pause(); 
+                videoRef.current.currentTime = 0; 
+                setIsPlaying(false); 
+                setShowComments(false); 
+                setShowActionSheet(false);
+            }
         }
     }, [isActive, video.id]);
 
@@ -613,289 +607,204 @@ const ReelItem: React.FC<{
             if (currentUser) setIsLiked(snap.docs.some(doc => doc.id === currentUser.uid));
         });
         const unsubComments = db.collection('videos').doc(video.id).collection('comments').onSnapshot(snap => setCommentCount(snap.size));
-        let unsubFollow = () => {};
-        if (currentUser) unsubFollow = db.collection('users').doc(currentUser.uid).collection('following').doc(video.authorId).onSnapshot(doc => setIsFollowing(doc.exists));
-        return () => { unsubLikes(); unsubComments(); unsubFollow(); };
-    }, [video.id, currentUser, video.authorId]);
+        return () => { unsubLikes(); unsubComments(); };
+    }, [video.id, currentUser]);
 
-    const handleLike = async (e: React.MouseEvent | React.TouchEvent) => {
+    const handleSeek = (e: React.MouseEvent | React.TouchEvent) => {
+        if (!videoRef.current || !progressRef.current) return;
+        const rect = progressRef.current.getBoundingClientRect();
+        const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+        const pos = (clientX - rect.left) / rect.width;
+        const clampedPos = Math.max(0, Math.min(1, pos));
+        videoRef.current.currentTime = clampedPos * videoRef.current.duration;
+        setProgress(clampedPos * 100);
+    };
+
+    const handleLike = async (e: React.MouseEvent) => {
         e.stopPropagation();
         if (!currentUser) { onLogin(); return; }
-        const likeRef = db.collection('videos').doc(video.id).collection('likes').doc(currentUser.uid);
-        const batch = db.batch();
-        try { 
-            if (isLiked) {
-                // Only allow unfollowing via the side button, double tap only ADDS like if not already liked
-                // standard reels behavior: double tap always likes, doesn't toggle
-                if (e.type === 'click') await likeRef.delete(); 
-            } else {
-                batch.set(likeRef, { createdAt: serverTimestamp() });
-                // Notify author
-                if (currentUser.uid !== video.authorId) {
-                    batch.set(db.collection('users').doc(video.authorId).collection('notifications').doc(), {
-                        type: 'new_like',
-                        fromUserId: currentUser.uid,
-                        fromUserName: currentUser.name,
-                        fromUserProfilePicUrl: currentUser.profilePicUrl,
-                        videoId: video.id,
-                        postTitle: video.title,
-                        createdAt: serverTimestamp(),
-                        read: false
-                    });
-                }
-                await batch.commit();
+        const ref = db.collection('videos').doc(video.id).collection('likes').doc(currentUser.uid);
+        if (isLiked) await ref.delete();
+        else {
+            const batch = db.batch();
+            batch.set(ref, { createdAt: serverTimestamp() });
+            if (currentUser.uid !== video.authorId) {
+                batch.set(db.collection('users').doc(video.authorId).collection('notifications').doc(), {
+                    type: 'new_like', fromUserId: currentUser.uid, fromUserName: currentUser.name, fromUserProfilePicUrl: currentUser.profilePicUrl, videoId: video.id, postTitle: video.title, createdAt: serverTimestamp(), read: false
+                });
             }
-        } catch (e) { showToast("Action failed", "error"); }
-    };
-
-    const handleVideoTap = (e: React.MouseEvent) => {
-        const now = Date.now();
-        const DOUBLE_TAP_DELAY = 300;
-
-        if (now - lastTap < DOUBLE_TAP_DELAY) {
-            // DOUBLE TAP DETECTED
-            if (!isLiked) {
-                handleLike(e);
-            }
-            setShowHeartAnim(true);
-            setTimeout(() => setShowHeartAnim(false), 800);
-        } else {
-            // SINGLE TAP
-            const v = videoRef.current;
-            if (v) {
-                if (v.paused) v.play();
-                else v.pause();
-            }
+            await batch.commit();
         }
-        setLastTap(now);
-    };
-
-    const handleShare = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        const shareUrl = `${window.location.origin}/?videoId=${video.id}`;
-        const shareText = `🚩 *न्यूज़ अपडेट:* *${video.title}*\n\n👉 *पूरी वीडियो यहाँ देखें:* ${shareUrl}\n\n*"आपकी खबर, आपकी पहचान – Public Tak News App"*`;
-        
-        db.collection('videos').doc(video.id).update({ shareCount: increment(1) }).catch(() => {});
-        
-        // Notify author
-        if (currentUser && currentUser.uid !== video.authorId) {
-            db.collection('users').doc(video.authorId).collection('notifications').add({
-                type: 'new_share',
-                fromUserId: currentUser.uid,
-                fromUserName: currentUser.name,
-                fromUserProfilePicUrl: currentUser.profilePicUrl,
-                videoId: video.id,
-                postTitle: video.title,
-                createdAt: serverTimestamp(),
-                read: false
-            }).catch(console.error);
-        }
-
-        window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank');
-    };
-
-    const handleFollowToggle = async (e: React.MouseEvent) => {
-        e.stopPropagation();
-        if (!currentUser) { onLogin(); return; }
-        const followRef = db.collection('users').doc(currentUser.uid).collection('following').doc(video.authorId);
-        const followerRef = db.collection('users').doc(video.authorId).collection('followers').doc(currentUser.uid);
-        const batch = db.batch();
-        
-        if (isFollowing) {
-            batch.delete(followRef);
-            batch.delete(followerRef);
-        } else {
-            batch.set(followRef, { followedAt: serverTimestamp() });
-            batch.set(followerRef, { followedAt: serverTimestamp() });
-            batch.set(db.collection('users').doc(video.authorId).collection('notifications').doc(), {
-                type: 'new_follower',
-                fromUserId: currentUser.uid,
-                fromUserName: currentUser.name,
-                fromUserProfilePicUrl: currentUser.profilePicUrl,
-                createdAt: serverTimestamp(),
-                read: false
-            });
-        }
-        try { await batch.commit(); } catch (error) { showToast("Action failed", "error"); }
     };
 
     return (
-        <div className="h-full w-full relative flex items-center justify-center bg-black snap-start snap-always overflow-hidden shrink-0">
-            <video ref={videoRef} src={video.videoUrl} poster={video.thumbnailUrl} className="h-full w-full object-contain" loop playsInline preload="auto" onClick={handleVideoTap} />
-            
-            {/* Double Tap Heart Animation Overlay */}
-            {showHeartAnim && (
-                <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none animate-in zoom-in-50 fade-in duration-300">
-                    <span className="material-symbols-outlined text-white text-[120px] drop-shadow-2xl opacity-80" style={{ fontVariationSettings: "'FILL' 1" }}>favorite</span>
+        <div className="h-full w-full snap-start snap-always relative flex flex-col items-center bg-black transition-all duration-500 overflow-hidden">
+            <div 
+                className={`relative w-full transition-all duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${showComments ? 'h-[35vh] md:h-[45vh]' : 'h-full'}`}
+                onClick={() => { if (isPlaying) videoRef.current?.pause(); else videoRef.current?.play(); setIsPlaying(!isPlaying); }}
+            >
+                <video 
+                    ref={videoRef} 
+                    src={video.videoUrl} 
+                    className="h-full w-full object-contain bg-black" 
+                    loop 
+                    playsInline 
+                    onTimeUpdate={() => { if (!isSeeking && videoRef.current) setProgress((videoRef.current.currentTime / videoRef.current.duration) * 100); }} 
+                />
+                
+                {!showComments && (
+                    <div className="absolute right-3 bottom-[calc(52px+6rem+env(safe-area-inset-bottom))] flex flex-col items-center gap-5 z-20 animate-in fade-in slide-in-from-right-4">
+                        <div className="flex flex-col items-center gap-1">
+                            <button onClick={handleLike} className={`w-12 h-12 flex items-center justify-center bg-black/20 backdrop-blur-md rounded-full border border-white/10 ${isLiked ? 'text-red-500' : 'text-white'}`}><span className="material-symbols-outlined text-[32px] drop-shadow-lg" style={{ fontVariationSettings: `'FILL' ${isLiked ? 1 : 0}` }}>favorite</span></button>
+                            <span className="text-white text-[10px] font-black drop-shadow-md">{formatCount(likeCount)}</span>
+                        </div>
+                        <div className="flex flex-col items-center gap-1">
+                            <button onClick={(e) => { e.stopPropagation(); setShowComments(true); }} className="w-12 h-12 flex items-center justify-center bg-black/20 backdrop-blur-md rounded-full border border-white/10 text-white"><span className="material-symbols-outlined text-[32px] drop-shadow-lg">chat_bubble</span></button>
+                            <span className="text-white text-[10px] font-black drop-shadow-md">{formatCount(commentCount)}</span>
+                        </div>
+                        <button onClick={(e) => { e.stopPropagation(); window.open(`https://wa.me/?text=${encodeURIComponent('🚩 Watch this news: ' + window.location.origin + '/?videoId=' + video.id)}`, '_blank'); }} className="w-12 h-12 flex items-center justify-center bg-black/20 backdrop-blur-md rounded-full border border-white/10 text-white"><span className="material-symbols-outlined text-[30px] drop-shadow-lg">share</span></button>
+                        
+                        {isAuthor && (
+                            <button onClick={(e) => { e.stopPropagation(); setShowActionSheet(true); }} className="w-12 h-12 flex items-center justify-center bg-black/20 backdrop-blur-md rounded-full border border-white/10 text-white"><span className="material-symbols-outlined text-[30px] drop-shadow-lg">more_horiz</span></button>
+                        )}
+                    </div>
+                )}
+
+                {!showComments && (
+                    <div className={`absolute bottom-0 left-0 w-full px-5 pt-20 pb-[calc(52px+2rem+env(safe-area-inset-bottom))] z-10 ${isExpanded ? 'bg-black/60' : 'bg-gradient-to-t from-black/90 to-transparent'}`}>
+                        <div className="flex items-center gap-3 mb-3">
+                            <img onClick={(e) => { e.stopPropagation(); onNavigate(View.PublicProfile, { userId: video.authorId }); }} src={video.authorProfilePicUrl} className="w-10 h-10 rounded-full border-2 border-white shadow-lg cursor-pointer" alt="" />
+                            <div className="flex items-center gap-2">
+                                <p className="text-white font-black text-sm drop-shadow-md">@{video.authorName}</p>
+                                {!isFollowing && currentUser?.uid !== video.authorId && <button onClick={(e) => { e.stopPropagation(); handleFollowToggle(video.authorId, video.authorName, video.authorProfilePicUrl); }} className="px-3 py-1 bg-red-600 text-white text-[9px] font-black uppercase rounded shadow-lg">Follow</button>}
+                            </div>
+                        </div>
+                        <div className="cursor-pointer" onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); }}>
+                            <h3 className={`text-white font-bold text-sm leading-tight drop-shadow-md transition-all ${isExpanded ? '' : 'line-clamp-1'}`}>{video.title}</h3>
+                            {isExpanded && video.description && <p className="text-white/80 text-xs mt-2 leading-relaxed animate-in fade-in duration-300">{video.description}</p>}
+                        </div>
+                    </div>
+                )}
+                
+                <div 
+                    ref={progressRef}
+                    className="absolute left-0 w-full h-8 z-[170] flex items-center cursor-pointer group"
+                    style={{ bottom: showComments ? '0' : 'calc(52px + env(safe-area-inset-bottom))' }}
+                    onMouseDown={(e) => { setIsSeeking(true); handleSeek(e); }}
+                    onMouseMove={(e) => { if (isSeeking) handleSeek(e); }}
+                    onMouseUp={() => setIsSeeking(false)}
+                    onTouchStart={(e) => { setIsSeeking(true); handleSeek(e); }}
+                    onTouchMove={(e) => { if (isSeeking) handleSeek(e); }}
+                    onTouchEnd={() => setIsSeeking(false)}
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <div className="w-full h-1 bg-white/20 relative overflow-visible rounded-full mx-0">
+                        <div className="h-full bg-red-600 shadow-[0_0_12px_rgba(220,38,38,1)] transition-all duration-100 ease-out" style={{ width: `${progress}%` }}>
+                            <div className={`absolute top-1/2 right-0 -translate-y-1/2 w-3 h-3 bg-red-600 rounded-full border border-white shadow-xl transition-transform ${isSeeking ? 'scale-125' : 'scale-0 group-hover:scale-100'}`}></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {showComments && (
+                <div className="flex-1 w-full bg-white flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-500 rounded-t-[2.5rem] shadow-[0_-20px_50px_rgba(0,0,0,0.5)] z-[160] relative">
+                    <CommentArea videoId={video.id} currentUser={currentUser} videoAuthorId={video.authorId} onClose={() => setShowComments(false)} onLogin={onLogin} />
                 </div>
             )}
 
-            <div className="absolute top-0 left-0 w-full p-4 flex items-center justify-between z-40 bg-gradient-to-b from-black/70 to-transparent">
-                <button onClick={(e) => { e.stopPropagation(); onClose(); }} className="p-2 text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)] active:scale-90 transition-transform"><span className="material-symbols-outlined text-3xl">arrow_back</span></button>
-                <div className="bg-white/10 backdrop-blur-md px-4 py-1.5 rounded-full border border-white/10 shadow-lg"><span className="text-white text-[10px] sm:text-xs font-black uppercase tracking-[0.15em] drop-shadow-md">PUBLIC TAK NEWS APP</span></div>
-                
-                <div className="flex items-center gap-2">
-                    <button onClick={(e) => { e.stopPropagation(); onSearchTrigger(); }} className="p-2 text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)] active:scale-90 transition-transform">
-                        <span className="material-symbols-outlined text-3xl">search</span>
-                    </button>
-                    <button onClick={(e) => { e.stopPropagation(); onNavigate(View.Settings); }} className="p-2 text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)] active:scale-90 transition-transform">
-                        <span className="material-symbols-outlined text-3xl">settings</span>
-                    </button>
-                </div>
-            </div>
-
-            <div className="absolute right-3 bottom-20 flex flex-col items-center gap-7 z-30">
-                <div className="flex flex-col items-center">
-                    <button onClick={(e) => handleLike(e as any)} className="flex items-center justify-center active:scale-125 transition-all transform duration-200">
-                        <span className={`material-symbols-outlined text-4xl drop-shadow-[0_2px_6px_rgba(0,0,0,0.8)] ${isLiked ? 'text-red-500' : 'text-white'}`} style={{ fontVariationSettings: `'FILL' ${isLiked ? 1 : 0}, 'wght' 600` }}>favorite</span>
-                    </button>
-                    <span className="text-[11px] font-black text-white mt-1 drop-shadow-[0_2px_4px_rgba(0,0,0,1)] tracking-wide">{formatCount(likeCount)}</span>
-                </div>
-                <div className="flex flex-col items-center">
-                    <button onClick={(e) => { e.stopPropagation(); setShowComments(true); }} className="flex items-center justify-center active:scale-110 transition-transform">
-                        <span className="material-symbols-outlined text-4xl text-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.8)]" style={{ fontVariationSettings: "'wght' 600" }}>chat_bubble</span>
-                    </button>
-                    <span className="text-[11px] font-black text-white mt-1 drop-shadow-[0_2px_4px_rgba(0,0,0,1)] tracking-wide">{formatCount(commentCount)}</span>
-                </div>
-                <div className="flex flex-col items-center">
-                    <button onClick={handleShare} className="flex items-center justify-center active:scale-110 transition-transform">
-                        <span className="material-symbols-outlined text-4xl text-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.8)]" style={{ fontVariationSettings: "'wght' 600" }}>share</span>
-                    </button>
-                    <span className="text-[11px] font-black text-white mt-1 drop-shadow-[0_2px_4px_rgba(0,0,0,1)] tracking-wide">{formatCount(video.shareCount || 0)}</span>
-                </div>
-                <button onClick={(e) => { e.stopPropagation(); setShowSettings(true); }} className="flex items-center justify-center opacity-80 active:scale-90 transition-all">
-                    <span className="material-symbols-outlined text-3xl text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">more_horiz</span>
-                </button>
-            </div>
-
-            <div className="absolute bottom-0 left-0 w-full p-6 pb-14 bg-gradient-to-t from-black/80 via-black/20 to-transparent z-20 flex flex-col pointer-events-none">
-                <div className="flex items-center gap-3 mb-3 pointer-events-auto">
-                    <div onClick={() => onNavigate(View.PublicProfile, { userId: video.authorId })} className="flex items-center gap-2 cursor-pointer group">
-                        <img src={video.authorProfilePicUrl} className="w-10 h-10 rounded-full border-2 border-white/60 shadow-2xl group-hover:scale-105 transition-transform" alt="" />
-                        <p className="font-black text-white text-base drop-shadow-lg tracking-tight">@{video.authorName}</p>
-                    </div>
-                    {(!currentUser || (currentUser.uid !== video.authorId && !isFollowing)) && (
-                        <button onClick={handleFollowToggle} className="px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all bg-white text-black shadow-xl active:scale-95 ml-2">Follow</button>
-                    )}
-                </div>
-                <div className="max-w-[80%] pointer-events-auto">
-                    <h2 className="font-bold text-white text-lg leading-tight drop-shadow-xl line-clamp-2 mb-2">{video.title}</h2>
-                    <div className="flex items-center gap-3 opacity-90">
-                        <span className="bg-red-600 text-white text-[9px] font-black px-2 py-0.5 rounded tracking-widest uppercase">{video.category}</span>
-                        <span className="text-white text-[10px] font-bold drop-shadow-md flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">location_on</span>{video.state || 'Overall'}</span>
+            {/* Author Action Sheet */}
+            {showActionSheet && (
+                <div className="fixed inset-0 z-[190] flex items-end justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-300" onClick={() => setShowActionSheet(false)}>
+                    <div className="bg-white w-full max-w-sm rounded-[2rem] overflow-hidden animate-in slide-in-from-bottom duration-400" onClick={e => e.stopPropagation()}>
+                        <div className="p-6 space-y-4">
+                            <h4 className="text-center font-black text-gray-400 uppercase text-[10px] tracking-widest mb-2">Video Settings</h4>
+                            <button 
+                                onClick={() => onNavigate(View.CreateVideo, { videoId: video.id })}
+                                className="w-full py-4 flex items-center justify-center gap-3 bg-blue-50 text-blue-700 rounded-2xl font-bold transition-all active:scale-95"
+                            >
+                                <span className="material-symbols-outlined">edit</span>
+                                Edit Video Details
+                            </button>
+                            <button 
+                                onClick={() => { setShowActionSheet(false); onDeleteVideo(video); }}
+                                className="w-full py-4 flex items-center justify-center gap-3 bg-red-50 text-red-600 rounded-2xl font-bold transition-all active:scale-95"
+                            >
+                                <span className="material-symbols-outlined">delete</span>
+                                Delete Permanently
+                            </button>
+                            <button 
+                                onClick={() => setShowActionSheet(false)}
+                                className="w-full py-4 text-gray-500 font-bold transition-all active:scale-95"
+                            >
+                                Cancel
+                            </button>
+                        </div>
                     </div>
                 </div>
-            </div>
-
-            {showComments && <CommentBottomSheet videoId={video.id} videoAuthorId={video.authorId} videoTitle={video.title} onClose={() => setShowComments(false)} currentUser={currentUser} onLogin={onLogin} />}
-            {showSettings && <VideoSettingsBottomSheet video={video} onClose={() => setShowSettings(false)} showToast={showToast} />}
+            )}
         </div>
     );
 };
 
-const VideoSettingsBottomSheet: React.FC<{ video: VideoPost; onClose: () => void; showToast: (m: string, t: any) => void; }> = ({ video, onClose, showToast }) => {
-    return (
-        <div className="fixed inset-0 z-[70] flex flex-col justify-end bg-black/70 backdrop-blur-sm" onClick={onClose}>
-            <div className="bg-white w-full rounded-t-[32px] overflow-hidden p-8 animate-in slide-in-from-bottom duration-300 shadow-[0_-10px_50px_rgba(0,0,0,0.5)]" onClick={e => e.stopPropagation()}>
-                <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-8"></div>
-                <div className="grid grid-cols-2 gap-4 mb-8">
-                    <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/?videoId=${video.id}`); showToast("Copied!", "success"); onClose(); }} className="flex flex-col items-center gap-3 p-6 bg-gray-50 rounded-3xl hover:bg-gray-100 transition-colors">
-                        <div className="w-14 h-14 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center shadow-sm"><span className="material-symbols-outlined text-3xl">link</span></div>
-                        <span className="font-bold text-sm text-gray-800">Copy Link</span>
-                    </button>
-                    <button onClick={() => { showToast("Reported!", "info"); onClose(); }} className="flex flex-col items-center gap-3 p-6 bg-gray-50 rounded-3xl hover:bg-gray-100 transition-colors">
-                        <div className="w-14 h-14 bg-red-50 text-red-600 rounded-full flex items-center justify-center shadow-sm"><span className="material-symbols-outlined text-3xl">flag</span></div>
-                        <span className="font-bold text-sm text-gray-800">Report</span>
-                    </button>
-                </div>
-                <button onClick={onClose} className="w-full py-4 bg-gray-900 text-white font-black uppercase text-xs tracking-[0.2em] rounded-2xl shadow-xl active:scale-95 transition-all">Close Menu</button>
-            </div>
-        </div>
-    );
-};
-
-const CommentBottomSheet: React.FC<{ videoId: string; videoAuthorId: string; videoTitle: string; onClose: () => void; currentUser: User | null; onLogin: () => void; }> = ({ videoId, videoAuthorId, videoTitle, onClose, currentUser, onLogin }) => {
+const CommentArea: React.FC<{ videoId: string; currentUser: User | null; videoAuthorId: string; onClose: () => void; onLogin: () => void }> = ({ videoId, currentUser, videoAuthorId, onClose, onLogin }) => {
     const [comments, setComments] = useState<Comment[]>([]);
     const [newComment, setNewComment] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const { showToast } = useToast();
+
     useEffect(() => {
         const unsub = db.collection('videos').doc(videoId).collection('comments').orderBy('createdAt', 'desc').onSnapshot(snap => {
             setComments(snap.docs.map(doc => ({ id: doc.id, ...doc.data(), createdAt: doc.data().createdAt?.toDate() || new Date() } as Comment)));
         });
         return () => unsub();
     }, [videoId]);
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!newComment.trim()) return;
         if (!currentUser) { onLogin(); return; }
+        if (!newComment.trim() || isSubmitting) return;
         setIsSubmitting(true);
-        try { 
-            const batch = db.batch();
-            const commentRef = db.collection('videos').doc(videoId).collection('comments').doc();
-            batch.set(commentRef, { 
-                content: newComment.trim(), 
-                authorId: currentUser.uid, 
-                authorName: currentUser.name, 
-                authorProfilePicUrl: currentUser.profilePicUrl, 
-                createdAt: serverTimestamp() 
+        try {
+            await db.collection('videos').doc(videoId).collection('comments').add({
+                content: newComment.trim(),
+                authorId: currentUser.uid,
+                authorName: currentUser.name,
+                authorProfilePicUrl: currentUser.profilePicUrl,
+                createdAt: serverTimestamp()
             });
-            
-            // Notify author
-            if (currentUser.uid !== videoAuthorId) {
-                const notifRef = db.collection('users').doc(videoAuthorId).collection('notifications').doc();
-                batch.set(notifRef, {
-                    type: 'new_comment',
-                    fromUserId: currentUser.uid,
-                    fromUserName: currentUser.name,
-                    fromUserProfilePicUrl: currentUser.profilePicUrl,
-                    videoId: videoId,
-                    postTitle: videoTitle,
-                    createdAt: serverTimestamp(),
-                    read: false
-                });
-            }
-            await batch.commit();
-            setNewComment(''); 
-        } catch (e) {} finally { setIsSubmitting(false); }
+            setNewComment('');
+            showToast("Comment posted", "success");
+        } catch (e) { showToast("Error", "error"); } finally { setIsSubmitting(false); }
     };
+
+    const handleDelete = async (id: string) => {
+        if (!window.confirm("Delete this comment?")) return;
+        try {
+            await db.collection('videos').doc(videoId).collection('comments').doc(id).delete();
+            showToast("Comment deleted", "success");
+        } catch (e) { showToast("Failed to delete", "error"); }
+    };
+
     return (
-        <div className="fixed inset-0 z-[70] flex flex-col justify-end bg-black/50 backdrop-blur-sm" onClick={onClose}>
-            <div className="bg-white w-full rounded-t-[32px] max-h-[75vh] flex flex-col p-5 shadow-[0_-20px_60px_rgba(0,0,0,0.3)] overflow-hidden animate-in slide-in-from-bottom duration-300" onClick={e => e.stopPropagation()}>
-                <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6"></div>
-                <div className="px-2 mb-6 flex justify-between items-center border-b border-gray-50 pb-4">
-                    <h3 className="font-black text-xl text-gray-900 tracking-tight">Comments <span className="text-gray-300 ml-1">({comments.length})</span></h3>
-                    <button onClick={onClose} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 active:scale-90 transition-all"><span className="material-symbols-outlined text-xl">close</span></button>
-                </div>
-                <div className="flex-grow overflow-y-auto mb-6 space-y-6 px-1 scrollbar-hide">
-                    {comments.length > 0 ? comments.map(c => (
-                        <div key={c.id} className="flex gap-4 group">
-                            <img src={c.authorProfilePicUrl} className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm ring-1 ring-gray-100" alt="" />
-                            <div className="flex-grow">
-                                <div className="bg-gray-50 p-4 rounded-[22px] rounded-tl-none border border-gray-100/50">
-                                    <p className="text-[11px] font-black text-gray-900 mb-1">@{c.authorName}</p>
-                                    <p className="text-sm text-gray-700 leading-relaxed font-medium">{c.content}</p>
-                                </div>
-                                <div className="flex items-center gap-4 mt-2 ml-2">
-                                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{c.createdAt ? new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</p>
-                                    <button className="text-[10px] font-black text-gray-500 uppercase tracking-widest hover:text-red-600">Reply</button>
-                                </div>
-                            </div>
-                        </div>
-                    )) : (
-                        <div className="flex flex-col items-center justify-center py-24 opacity-40">
-                            <span className="material-symbols-outlined text-7xl text-gray-200">forum</span>
-                            <p className="font-black text-gray-400 mt-4 uppercase tracking-[0.2em] text-xs">No comments yet</p>
-                        </div>
-                    )}
-                </div>
-                <div className="pb-safe">
-                    <form onSubmit={handleSubmit} className="flex gap-3 bg-gray-100 p-2.5 rounded-[24px] border border-gray-200 focus-within:border-red-400 focus-within:ring-2 focus-within:ring-red-100 transition-all mb-4">
-                        <input value={newComment} onChange={e => setNewComment(e.target.value)} placeholder="Share your thoughts..." className="flex-grow bg-transparent px-4 text-sm font-medium outline-none text-gray-800" />
-                        <button type="submit" disabled={isSubmitting || !newComment.trim()} className="w-11 h-11 rounded-full bg-red-600 text-white flex items-center justify-center shadow-lg shadow-red-200 active:scale-95 transition-all disabled:opacity-50 disabled:grayscale"><span className="material-symbols-outlined text-xl">send</span></button>
-                    </form>
-                </div>
+        <>
+            <div className="p-5 border-b flex justify-between items-center sticky top-0 bg-white z-10">
+                <h3 className="font-black text-lg text-gray-900">Comments <span className="text-gray-400 font-bold ml-1">{formatCount(comments.length)}</span></h3>
+                <button onClick={onClose} className="p-2 bg-gray-100 rounded-full hover:rotate-90 transition-transform"><span className="material-symbols-outlined text-gray-600">close</span></button>
             </div>
-        </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-hide pb-32">
+                {comments.length === 0 ? <div className="text-center py-20 text-gray-400 font-bold italic">No comments yet. Be the first!</div> : (
+                    comments.map(c => <VideoCommentItem key={c.id} comment={c} videoId={videoId} currentUser={currentUser} videoAuthorId={videoAuthorId} isAdmin={currentUser?.role === 'admin'} onViewUser={id => {}} onDelete={handleDelete} onLogin={onLogin} showToast={showToast} />)
+                )}
+            </div>
+            <div className="p-4 border-t bg-white absolute bottom-0 left-0 w-full shadow-[0_-10px_30px_rgba(0,0,0,0.1)] pb-[calc(52px+1rem+env(safe-area-inset-bottom))]">
+                {currentUser ? (
+                    <form onSubmit={handleSubmit} className="flex gap-2">
+                        <input value={newComment} onChange={e => setNewComment(e.target.value)} placeholder="Add a comment..." className="flex-1 bg-gray-100 p-4 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-red-100 transition-all font-medium" />
+                        <button type="submit" disabled={!newComment.trim() || isSubmitting} className="bg-red-600 text-white px-8 py-2 rounded-2xl font-black text-xs uppercase tracking-widest disabled:opacity-50 active:scale-95 transition-all shadow-lg shadow-red-100">Send</button>
+                    </form>
+                ) : <button onClick={onLogin} className="w-full py-4 text-red-600 font-black text-xs uppercase tracking-widest bg-red-50 rounded-2xl">Login to comment</button>}
+            </div>
+        </>
     );
 };
 

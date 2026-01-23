@@ -1,7 +1,5 @@
 
 // Import the functions you need from the SDKs you need
-// We use the keys defined in index.html importmap to ensure consistent versions (10.12.2)
-// Importing for side effects ensures the 'firebase' global is populated by the compat scripts.
 import "firebase/app";
 import "firebase/auth";
 import "firebase/firestore";
@@ -33,5 +31,6 @@ const storage = firebase.storage();
 const messaging = firebase.messaging.isSupported() ? firebase.messaging() : null;
 const serverTimestamp = firebase.firestore.FieldValue.serverTimestamp;
 const increment = firebase.firestore.FieldValue.increment;
+const arrayUnion = firebase.firestore.FieldValue.arrayUnion;
 
-export { auth, db, storage, messaging, serverTimestamp, increment, firebase };
+export { auth, db, storage, messaging, serverTimestamp, increment, arrayUnion, firebase };

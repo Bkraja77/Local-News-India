@@ -1,6 +1,6 @@
 
-const CACHE_NAME = 'public-tak-v4';
-const OFFLINE_URL = '/?page=offline'; // We can handle this route in App.tsx
+const CACHE_NAME = 'public-tak-v6';
+const OFFLINE_URL = '/?page=offline';
 
 const STATIC_ASSETS = [
   '/',
@@ -14,27 +14,19 @@ const STATIC_ASSETS = [
   'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css'
 ];
 
-// Install Event - Pre-cache Static Assets
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      console.log('[SW] Pre-caching static assets');
-      return cache.addAll(STATIC_ASSETS);
-    })
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
   );
   self.skipWaiting();
 });
 
-// Activate Event - Clean up old caches
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cache) => {
-          if (cache !== CACHE_NAME) {
-            console.log('[SW] Deleting old cache:', cache);
-            return caches.delete(cache);
-          }
+          if (cache !== CACHE_NAME) return caches.delete(cache);
         })
       );
     })
@@ -42,80 +34,32 @@ self.addEventListener('activate', (event) => {
   return self.clients.claim();
 });
 
-// Fetch Event - Stale-While-Revalidate Strategy
+// Background Sync for failed posts
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'sync-new-posts') {
+    console.log('[SW] Background Sync triggered');
+  }
+});
+
 self.addEventListener('fetch', (event) => {
-  // Skip cross-origin or non-GET requests
+  // Skip cross-origin and non-GET requests
   if (event.request.method !== 'GET') return;
+  if (!event.request.url.startsWith(self.location.origin)) return;
 
   event.respondWith(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.match(event.request).then((cachedResponse) => {
-        const fetchPromise = fetch(event.request).then((networkResponse) => {
-          // Update cache with fresh response
-          if (networkResponse && networkResponse.status === 200) {
-            cache.put(event.request, networkResponse.clone());
-          }
-          return networkResponse;
-        }).catch(() => {
-          // If network fails and no cache, maybe return offline page for navigation
-          if (event.request.mode === 'navigate') {
-            return cache.match(OFFLINE_URL);
-          }
-        });
-
-        // Return cached response immediately, or wait for network
-        return cachedResponse || fetchPromise;
-      });
-    })
-  );
-});
-
-// Push Notification Event with Actions
-self.addEventListener('push', (event) => {
-  let data = { title: 'Public Tak', body: 'New updates available!' };
-  if (event.data) {
-    data = event.data.json();
-  }
-
-  const options = {
-    body: data.body,
-    icon: '/icon-192.png',
-    badge: '/icon-192.png',
-    image: data.image || null,
-    vibrate: [200, 100, 200],
-    data: {
-      url: data.url || '/'
-    },
-    actions: [
-      { action: 'read', title: 'Open News', icon: '/icon-192.png' },
-      { action: 'close', title: 'Dismiss' }
-    ]
-  };
-
-  event.waitUntil(
-    self.registration.showNotification(data.title, options)
-  );
-});
-
-// Notification Click Handler
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-
-  if (event.action === 'close') return;
-
-  const urlToOpen = event.notification.data.url;
-
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      for (let i = 0; i < windowClients.length; i++) {
-        const client = windowClients[i];
-        if (client.url === urlToOpen && 'focus' in client) {
-          return client.focus();
+    caches.match(event.request).then((cachedResponse) => {
+      const fetchPromise = fetch(event.request).then((networkResponse) => {
+        if (networkResponse && networkResponse.status === 200) {
+          const responseClone = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseClone);
+          });
         }
-      }
-      if (clients.openWindow) {
-        return clients.openWindow(urlToOpen);
-      }
+        return networkResponse;
+      }).catch(() => {
+        if (event.request.mode === 'navigate') return caches.match(OFFLINE_URL);
+      });
+      return cachedResponse || fetchPromise;
     })
   );
 });

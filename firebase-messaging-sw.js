@@ -15,66 +15,38 @@ firebase.initializeApp(firebaseConfig);
 
 const messaging = firebase.messaging();
 
-/**
- * Handle background messages.
- * Note: Custom sounds are not supported in the standard showNotification API 
- * for background service workers in most browsers for anti-spam reasons.
- * However, we use vibrations and high-quality images to ensure visibility.
- */
 messaging.onBackgroundMessage((payload) => {
-  console.log('[firebase-messaging-sw.js] Received background message ', payload);
+  console.log('[firebase-messaging-sw.js] Background message ', payload);
   
-  const notificationTitle = payload.notification.title || "New News Update";
+  const notificationTitle = payload.notification?.title || payload.data?.title || "Public Tak Update";
   const notificationOptions = {
-    body: payload.notification.body || "Click to read the latest updates on Public Tak.",
+    body: payload.notification?.body || payload.data?.body || "Click to see the latest news.",
     icon: '/icon-192.png', 
-    badge: '/icon-192.png', // Monochrome icon for Android status bar
-    image: payload.notification.image || payload.data?.image || null, // Large image for drawer
-    vibrate: [300, 100, 300, 100, 400], // Distinctive news vibration pattern
-    tag: 'public-tak-news-alert',
+    badge: '/icon-192.png',
+    image: payload.notification?.image || payload.data?.image || null,
+    vibrate: [200, 100, 200],
+    tag: payload.data?.postId || 'general-news',
     renotify: true,
     data: {
         url: payload.data?.url || (payload.data?.postId ? `/?postId=${payload.data.postId}` : '/')
-    },
-    actions: [
-        {
-            action: 'open',
-            title: 'Read News'
-        },
-        {
-            action: 'close',
-            title: 'Dismiss'
-        }
-    ]
+    }
   };
 
   return self.registration.showNotification(notificationTitle, notificationOptions);
 });
 
 self.addEventListener('notificationclick', function(event) {
-  if (event.action === 'close') {
-    event.notification.close();
-    return;
-  }
-
   event.notification.close();
-  const urlToOpen = event.notification.data.url || '/';
+  const urlToOpen = new URL(event.notification.data.url, self.location.origin).href;
   
   event.waitUntil(
     clients.matchAll({type: 'window', includeUncontrolled: true}).then(windowClients => {
-        // Try to find an existing window and focus it
         for (let i = 0; i < windowClients.length; i++) {
             const client = windowClients[i];
-            if (client.url.includes(self.location.origin) && 'focus' in client) {
-                // If it's the same URL, focus it. If different, navigate and focus.
-                if (client.url === urlToOpen) {
-                    return client.focus();
-                } else {
-                    return client.navigate(urlToOpen).then(c => c.focus());
-                }
+            if (client.url === urlToOpen && 'focus' in client) {
+                return client.focus();
             }
         }
-        // If no window found, open a new one
         if (clients.openWindow) {
             return clients.openWindow(urlToOpen);
         }

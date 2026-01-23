@@ -23,18 +23,18 @@ import NotificationsPage from './components/NotificationsPage';
 import SiteSettingsPage from './components/SiteSettingsPage';
 import SearchPage from './components/SearchPage';
 import BottomNavBar from './components/BottomNavBar';
-import PostDetailPage from './components/PostDetailPage';
-import { auth, db, messaging, serverTimestamp, firebase } from './firebaseConfig';
+import { auth, db, messaging, serverTimestamp, firebase, arrayUnion } from './firebaseConfig';
 import PublicProfilePage from './components/PublicProfilePage';
 import AdminEditUserPage from './components/AdminEditUserPage';
 import ManageAccountPage from './components/ManageAccountPage';
 import ChangePasswordPage from './components/ChangePasswordPage';
 import ManageAdsPage from './components/ManageAdsPage';
 import ViewFeedbackPage from './components/ViewFeedbackPage';
+import PostDetailPage from './components/PostDetailPage';
 import { LanguageProvider } from './contexts/LanguageContext';
 import { ToastProvider, useToast } from './contexts/ToastContext';
 import Sidebar from './components/Sidebar';
-import { APP_LOGO_URL } from './utils/constants';
+import InstallPWA from './components/InstallPWA';
 
 const AppContent: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>(View.Main);
@@ -47,6 +47,7 @@ const AppContent: React.FC = () => {
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
   const [shouldFocusComment, setShouldFocusComment] = useState(false);
   const [userPageInitialTab, setUserPageInitialTab] = useState<'posts' | 'videos' | 'drafts'>('posts');
+  const [searchMode, setSearchMode] = useState<'all' | 'video' | 'video-user'>('all');
   const currentViewRef = useRef(currentView);
   const { showToast } = useToast();
 
@@ -59,32 +60,64 @@ const AppContent: React.FC = () => {
     if (savedTheme === 'dark') document.body.classList.add('dark-mode');
   }, []);
 
-  // Handle Initial Deep Links from URL
+  // --- Push Notification Registration ---
+  useEffect(() => {
+    if (!currentUser || !messaging) return;
+
+    const setupNotifications = async () => {
+      try {
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+          const token = await messaging.getToken({
+            vapidKey: 'BIsy_7L9i5U7yX9J_X8V6O8_7L9i5U7yX9J_X8V6O8_7L9i5U7yX9J_X8V6O8_7L9i5U7yX9J_X8V6O8'
+          });
+          
+          if (token) {
+            await db.collection('users').doc(currentUser.uid).update({
+              fcmTokens: arrayUnion(token),
+              lastActive: serverTimestamp()
+            });
+          }
+        }
+      } catch (err) {
+        console.error("Notification setup failed:", err);
+      }
+    };
+
+    setupNotifications();
+
+    const unsubscribeMessaging = messaging.onMessage((payload) => {
+      showToast(payload.notification?.body || "New notification received!", "success");
+      setUnreadNotificationsCount(prev => prev + 1);
+    });
+
+    return () => unsubscribeMessaging();
+  }, [currentUser, showToast]);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const videoId = params.get('videoId');
     const postId = params.get('postId');
     const userId = params.get('userId');
+    const page = params.get('page');
 
-    if (videoId) {
-      navigateTo(View.Videos, { videoId });
-    } else if (postId) {
-      navigateTo(View.PostDetail, { postId });
-    } else if (userId) {
-      navigateTo(View.PublicProfile, { userId });
-    }
+    if (videoId) navigateTo(View.Videos, { videoId });
+    else if (postId) navigateTo(View.PostDetail, { postId });
+    else if (userId) navigateTo(View.PublicProfile, { userId });
+    else if (page === 'login') navigateTo(View.Login);
   }, []);
 
   useEffect(() => {
     const handlePopState = (event: PopStateEvent) => {
       if (event.state && event.state.view) {
-        const { view, postId, userId, adminUserId, draftId, initialTab, videoId } = event.state;
+        const { view, postId, userId, adminUserId, draftId, initialTab, videoId, searchMode } = event.state;
         if (postId) setSelectedPostId(postId);
         if (userId) setSelectedUserId(userId);
         if (videoId) setSelectedVideoId(videoId);
         if (adminUserId) setSelectedUserIdForAdmin(adminUserId);
         if (draftId) setSelectedDraftId(draftId); else setSelectedDraftId(null);
         if (initialTab) setUserPageInitialTab(initialTab);
+        setSearchMode(searchMode || 'all');
         setCurrentView(view);
         setShouldFocusComment(false);
       } else setCurrentView(View.Main);
@@ -113,16 +146,16 @@ const AppContent: React.FC = () => {
                     preferredBlock: userData?.preferredBlock || '',
                 };
                 setCurrentUser(userObj);
-                
-                // AUTOMATIC REDIRECT ON LOGIN
-                if (currentViewRef.current === View.Login) {
-                    navigateTo(View.Main);
-                }
+                if (currentViewRef.current === View.Login) navigateTo(View.Main);
             }
         });
+        const unsubNotifs = db.collection('users').doc(firebaseUser.uid).collection('notifications')
+          .where('read', '==', false)
+          .onSnapshot(snap => setUnreadNotificationsCount(snap.size));
+        return () => unsubNotifs();
       } else {
           setCurrentUser(null);
-          // If user was on a protected page, kick to home
+          setUnreadNotificationsCount(0);
           if (currentViewRef.current === View.User || currentViewRef.current === View.Admin || currentViewRef.current === View.EditProfile) {
               navigateTo(View.Main);
           }
@@ -139,13 +172,14 @@ const AppContent: React.FC = () => {
     if (params.adminUserId) setSelectedUserIdForAdmin(params.adminUserId);
     if (params.draftId) setSelectedDraftId(params.draftId); else setSelectedDraftId(null);
     if (params.initialTab) setUserPageInitialTab(params.initialTab);
+    setSearchMode(params.searchMode || 'all');
     setShouldFocusComment(!!params.focusComment);
 
-    // Build URL with params if they exist to support refresh
     const url = new URL(window.location.origin);
     if (params.videoId) url.searchParams.set('videoId', params.videoId);
     if (params.postId) url.searchParams.set('postId', params.postId);
     if (params.userId) url.searchParams.set('userId', params.userId);
+    if (view === View.Login) url.searchParams.set('page', 'login');
 
     window.history.pushState({ view, ...params }, '', url.toString());
   };
@@ -168,10 +202,10 @@ const AppContent: React.FC = () => {
     <div className="font-sans text-gray-800 bg-gray-100 h-screen flex overflow-hidden">
         <Sidebar onNavigate={navigateTo} currentUser={currentUser} currentView={currentView} unreadCount={unreadNotificationsCount} onLogout={handleLogout} onLogin={() => navigateTo(View.Login)} />
         <div className="relative flex flex-col flex-1 h-full w-full overflow-hidden">
-            <div className="relative flex-1 w-full h-full overflow-hidden md:overflow-y-auto">
+            <div className="relative flex-1 w-full h-full overflow-hidden md:overflow-y-auto pb-[calc(52px+env(safe-area-inset-bottom))] md:pb-0">
                 <PageWrapper view={View.Main}><HomePage onNavigate={navigateTo} currentUser={currentUser} onLogin={() => navigateTo(View.Login)} onLogout={handleLogout} onViewPost={id => navigateTo(View.PostDetail, {postId:id})} onViewUser={id => navigateTo(View.PublicProfile, {userId:id})} onEditPost={id => navigateTo(View.EditPost, {postId:id})} /></PageWrapper>
                 <PageWrapper view={View.Videos}><VideosPage onNavigate={navigateTo} currentUser={currentUser} onLogin={() => navigateTo(View.Login)} videoId={selectedVideoId} isCurrentView={currentView === View.Videos} /></PageWrapper>
-                <PageWrapper view={View.Search}><SearchPage onNavigate={navigateTo} onViewPost={id => navigateTo(View.PostDetail, {postId:id})} currentUser={currentUser} onViewUser={id => navigateTo(View.PublicProfile, {userId:id})} /></PageWrapper>
+                <PageWrapper view={View.Search}><SearchPage onNavigate={navigateTo} onViewPost={id => navigateTo(View.PostDetail, {postId:id})} currentUser={currentUser} onViewUser={id => navigateTo(View.PublicProfile, {userId:id})} searchMode={searchMode} /></PageWrapper>
                 <PageWrapper view={View.CreatePostChoice}><CreatePostChoicePage onBack={() => window.history.back()} onNavigate={navigateTo} /></PageWrapper>
                 <PageWrapper view={View.CreateVideo}><CreateVideoPage onBack={() => window.history.back()} currentUser={currentUser} onNavigate={navigateTo} draftId={selectedDraftId} /></PageWrapper>
                 <PageWrapper view={View.CreatePost}><CreatePostPage onBack={() => window.history.back()} currentUser={currentUser} onNavigate={navigateTo} draftId={selectedDraftId} /></PageWrapper>
@@ -200,6 +234,7 @@ const AppContent: React.FC = () => {
             </div>
             <BottomNavBar onNavigate={navigateTo} currentUser={currentUser} currentView={currentView} unreadCount={unreadNotificationsCount} />
         </div>
+        <InstallPWA />
     </div>
   );
 };

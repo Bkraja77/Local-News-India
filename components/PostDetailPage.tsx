@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Post, User, View, Comment } from '../types';
+// Added Reply to the import from types
+import { Post, User, View, Comment, Reply } from '../types';
 import Header from './Header';
 import { db, serverTimestamp, increment, storage } from '../firebaseConfig';
 import ReportModal from './ReportModal';
@@ -25,14 +26,7 @@ interface PostDetailPageProps {
     focusComment?: boolean;
 }
 
-interface Reply {
-    id: string;
-    content: string;
-    authorId: string;
-    authorName: string;
-    authorProfilePicUrl: string;
-    createdAt: Date;
-}
+// Removed local Reply interface definition: now using central Reply from ../types
 
 function decode(base64: string) {
   const binaryString = atob(base64);
@@ -184,7 +178,7 @@ const ReplyItem: React.FC<{ reply: Reply; postId: string; commentId: string; cur
                     </div>
                     {!isEditing && (isAdmin || isCurrentUserReply) && (
                         <div className="relative" ref={menuRef}>
-                            <button onClick={() => setShowMenu(!showMenu)} className="p-1 text-gray-300 hover:text-gray-600 active:scale-90 transition-all"><span className="material-symbols-outlined text-base">more_horiz</span></button>
+                            <button onClick={() => setShowMenu(!showMenu)} className="p-1.5 text-gray-300 hover:text-gray-600 active:scale-90 transition-all"><span className="material-symbols-outlined text-base">more_horiz</span></button>
                             {showMenu && <div className="absolute right-0 top-full mt-1 w-28 bg-white rounded-lg shadow-xl border z-20 overflow-hidden animate-in fade-in zoom-in-95 duration-100"><button onClick={() => { setIsEditing(true); setEditText(reply.content); setShowMenu(false); }} className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 transition-colors">Edit</button><button onClick={handleDeleteReply} className="w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50 transition-colors">Delete</button></div>}
                         </div>
                     )}
@@ -207,6 +201,7 @@ const CommentItem: React.FC<{ comment: Comment; postId: string; currentUser: Use
     const [editText, setEditText] = useState('');
     const [isSavingEdit, setIsSavingEdit] = useState(false);
     const [showMenu, setShowMenu] = useState(false);
+    // Fixed: Reply is now imported from central types.ts
     const [serverReplies, setServerReplies] = useState<Reply[]>([]);
     const [localReplies, setLocalReplies] = useState<Reply[]>([]);
     const menuRef = useRef<HTMLDivElement>(null);
@@ -257,7 +252,7 @@ const CommentItem: React.FC<{ comment: Comment; postId: string; currentUser: Use
     const saveEdit = async () => { if (!editText.trim()) return; setIsSavingEdit(true); try { await db.collection('posts').doc(postId).collection('comments').doc(comment.id).update({ content: editText.trim() }); setIsEditing(false); showToast("Comment updated", "success"); } catch (e) { showToast("Failed to update", "error"); } finally { setIsSavingEdit(false); } };
 
     return (
-        <div className="flex items-start gap-4 group animate-in fade-in slide-in-from-bottom-2 duration-300">
+        <div className="flex items-start gap-4 group animate-in fade-in slide-in-from-bottom-2 duration-300 px-4 md:px-0">
             <div className="flex flex-col items-center h-full relative">
                 <img src={comment.authorProfilePicUrl} alt="" className="w-10 h-10 rounded-full object-cover cursor-pointer ring-2 ring-white shadow-sm flex-shrink-0 z-10 hover:scale-105 transition-transform" onClick={() => onViewUser(comment.authorId)} />
                 {displayReplies.length > 0 && <div className="absolute top-10 bottom-0 left-1/2 -translate-x-1/2 w-0.5 bg-gray-100 rounded-full"></div>}
@@ -279,7 +274,7 @@ const CommentItem: React.FC<{ comment: Comment; postId: string; currentUser: Use
                     </div>
                     {isEditing ? (
                         <div className="mt-2"><textarea value={editText} onChange={(e) => setEditText(e.target.value)} className="w-full p-3 text-sm border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all" autoFocus /><div className="flex justify-end gap-2 mt-3"><button onClick={() => setIsEditing(false)} className="px-4 py-2 text-xs font-semibold text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200">Cancel</button><button onClick={saveEdit} className="px-4 py-2 text-xs font-bold text-white bg-blue-600 rounded-xl disabled:opacity-50 hover:bg-blue-700 shadow-md" disabled={isSavingEdit}>{isSavingEdit ? 'Saving...' : 'Save Changes'}</button></div></div>
-                    ) : <p className="text-gray-800 text-sm leading-relaxed break-words whitespace-pre-wrap">{comment.content}</p>}
+                ) : <p className="text-gray-800 text-sm leading-relaxed break-words whitespace-pre-wrap">{comment.content}</p>}
                 </div>
                 <div className="flex items-center gap-6 mt-2.5 ml-1">
                     <button onClick={handleLike} className={`flex items-center gap-1.5 text-xs font-bold transition-all active:scale-90 ${isLiked ? 'text-red-500' : 'text-gray-500 hover:text-red-500'}`}><span className="material-symbols-outlined text-[18px] transition-all" style={{ fontVariationSettings: `'FILL' ${isLiked ? 1 : 0}` }}>favorite</span>{likeCount > 0 ? formatCount(likeCount) : 'Like'}</button>
@@ -410,6 +405,7 @@ const PostDetailPage: React.FC<PostDetailPageProps> = ({ postId, currentUser, on
                 source.start(); 
                 audioSourceRef.current = source; 
                 setIsPlayingAudio(true);
+                if (isAutoStart) showToast("Now reading news aloud", "info");
             } else throw new Error("No audio data received");
         } catch (e) { 
             console.error("Audio failed", e); 
@@ -420,9 +416,15 @@ const PostDetailPage: React.FC<PostDetailPageProps> = ({ postId, currentUser, on
     };
 
     useEffect(() => { 
+        // Logic for automatic reading aloud when page opens
         if (!loading && post && !hasAutoPlayed.current) { 
             hasAutoPlayed.current = true; 
-            const timer = setTimeout(() => { if (isMounted.current) handleReadAloud(true); }, 300); 
+            // Small delay to allow initial render to finish
+            const timer = setTimeout(() => { 
+                if (isMounted.current) {
+                    handleReadAloud(true); 
+                }
+            }, 800); 
             return () => clearTimeout(timer); 
         } 
     }, [loading, post]);
@@ -476,7 +478,7 @@ const PostDetailPage: React.FC<PostDetailPageProps> = ({ postId, currentUser, on
     const authorPic = currentUser?.uid === post.authorId ? currentUser.profilePicUrl : post.authorProfilePicUrl;
 
     return (
-        <div className="flex flex-col h-full bg-white">
+        <div className="flex flex-col h-full bg-white relative">
             <SEO 
                 title={translatedData ? translatedData.title : post.title} 
                 description={translatedData ? translatedData.content : post.content} 
@@ -487,9 +489,27 @@ const PostDetailPage: React.FC<PostDetailPageProps> = ({ postId, currentUser, on
                 publishedAt={post.createdAt ? post.createdAt.toISOString() : undefined}
             />
             <Header title={t('post')} showBackButton onBack={onBack} />
-            <main className="flex-grow overflow-y-auto pb-20 md:pb-10">
+            
+            {/* Visual Indicator Banner for Audio */}
+            {isPlayingAudio && (
+                <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[60] animate-in slide-in-from-bottom-10 duration-500">
+                    <div className="bg-red-600 text-white px-6 py-2.5 rounded-full shadow-2xl flex items-center gap-3 ring-4 ring-white/20">
+                        <div className="flex items-center gap-1 h-4">
+                            <div className="w-1 h-full bg-white rounded-full animate-[bounce_0.5s_infinite_0s]"></div>
+                            <div className="w-1 h-3/4 bg-white rounded-full animate-[bounce_0.5s_infinite_0.1s]"></div>
+                            <div className="w-1 h-full bg-white rounded-full animate-[bounce_0.5s_infinite_0.2s]"></div>
+                        </div>
+                        <span className="text-[10px] font-black uppercase tracking-widest whitespace-nowrap">Voice Reading Active</span>
+                        <button onClick={stopAudio} className="ml-2 w-6 h-6 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/40 transition-colors">
+                            <span className="material-symbols-outlined text-sm">close</span>
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            <main className="flex-grow overflow-y-auto pb-24 md:pb-10">
                 <div className="w-full max-w-7xl mx-auto md:px-4 py-0 md:py-6">
-                    <div className="glass-card mb-8 overflow-hidden rounded-none md:rounded-2xl border-x-0 md:border border-gray-100 bg-white shadow-sm">
+                    <div className="glass-card mb-0 md:mb-8 overflow-hidden rounded-none md:rounded-2xl border-x-0 md:border border-gray-100 bg-white shadow-sm">
                         <div className="px-4 py-3 flex items-center gap-3 border-b border-gray-100 bg-white sticky top-0 z-10">
                             <img onClick={() => onViewUser(post.authorId)} src={authorPic} className="w-10 h-10 rounded-full object-cover cursor-pointer ring-2 ring-gray-100" alt="" />
                             <div className="flex-grow"><p onClick={() => onViewUser(post.authorId)} className="font-bold text-gray-800 cursor-pointer">{authorName}</p><p className="text-xs text-gray-500">{timeAgo(post.createdAt)}</p></div>
@@ -529,7 +549,16 @@ const PostDetailPage: React.FC<PostDetailPageProps> = ({ postId, currentUser, on
                                 <span className="bg-red-100 text-red-700 px-2 py-1 rounded font-bold uppercase text-xs">{post.category}</span>
                                 <span className="text-gray-500 flex items-center gap-1 font-medium"><span className="material-symbols-outlined text-[16px]">calendar_today</span>{post.createdAt ? new Date(post.createdAt).toLocaleDateString() : ''}</span>
                                 <button onClick={() => setShowTranslateMenu(!showTranslateMenu)} className="p-1.5 text-gray-500 hover:text-blue-600" title="Translate News"><span className="material-symbols-outlined text-lg">g_translate</span></button>
-                                <button onClick={() => handleReadAloud(false)} disabled={isGeneratingAudio} className={`p-1.5 transition-colors ${isPlayingAudio ? 'text-red-600' : 'text-gray-500 hover:text-blue-600'}`} title={isPlayingAudio ? "Stop Reading" : "Read News Aloud"}>{isGeneratingAudio ? <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> : <span className="material-symbols-outlined text-lg">{isPlayingAudio ? 'stop_circle' : 'volume_up'}</span>}</button>
+                                <button onClick={() => handleReadAloud(false)} disabled={isGeneratingAudio} className={`p-1.5 transition-colors relative flex items-center justify-center ${isPlayingAudio ? 'text-red-600' : 'text-gray-500 hover:text-blue-600'}`} title={isPlayingAudio ? "Stop Reading" : "Read News Aloud"}>
+                                    {isGeneratingAudio ? (
+                                        <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                    ) : (
+                                        <>
+                                            <span className="material-symbols-outlined text-lg">{isPlayingAudio ? 'stop_circle' : 'volume_up'}</span>
+                                            {isPlayingAudio && <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-600 rounded-full animate-ping"></span>}
+                                        </>
+                                    )}
+                                </button>
                                 {showTranslateMenu && <div className="absolute left-4 top-12 w-48 bg-white shadow-2xl rounded-xl z-50 border border-gray-100 overflow-hidden animate-in fade-in zoom-in-95">{languages.slice(0, 8).map(l => <button key={l.code} onClick={() => handleTranslate(l.code, l.name)} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50">{l.nativeName}</button>)}</div>}
                             </div>
                             <h1 className="text-2xl md:text-4xl font-extrabold text-gray-900 mb-6 leading-tight">{translatedData ? translatedData.title : post.title}</h1>
@@ -545,12 +574,49 @@ const PostDetailPage: React.FC<PostDetailPageProps> = ({ postId, currentUser, on
                             <div className="relative"><button onClick={() => setIsMenuOpen(!isMenuOpen)} className="p-2 rounded-full hover:bg-gray-200 transition-colors"><span className="material-symbols-outlined">more_vert</span></button>{isMenuOpen && <div className="absolute bottom-full right-0 mb-2 w-48 bg-white rounded-xl shadow-xl border overflow-hidden z-20">{(currentUser?.uid === post.authorId || currentUser?.role === 'admin') && <button onClick={() => onEditPost(post.id)} className="w-full text-left px-4 py-3 text-sm hover:bg-gray-50 flex items-center gap-2"><span className="material-symbols-outlined text-lg">edit</span> Edit</button>}<button onClick={() => showToast("Report function active", "info")} className="w-full text-left px-4 py-3 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"><span className="material-symbols-outlined text-lg">flag</span> Report</button></div>}</div>
                         </div>
                     </div>
-                    <AdBanner slotType="post" className="mb-8" />
-                    {relatedPosts.length > 0 && <div className="mb-12 px-4 md:px-0"><h2 className="text-2xl font-bold mb-6 text-gray-900 flex items-center gap-2"><span className="w-1 h-8 bg-red-600 rounded-full"></span>Related News</h2><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">{relatedPosts.map(rp => <div key={rp.id} onClick={() => onViewPost(rp.id)} className="glass-card overflow-hidden cursor-pointer group hover:shadow-lg transition-all border border-gray-100 bg-white flex flex-col"><div className="w-full h-48 overflow-hidden relative bg-gray-50 flex items-center justify-center"><img src={rp.thumbnailUrl} alt={rp.title} className="w-full h-full object-contain transition-all" /></div><div className="p-4 flex-grow flex flex-col"><div className="flex items-center gap-2 mb-2"><span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-[10px] uppercase font-bold rounded tracking-wider">{rp.category}</span><span className="text-xs text-gray-400">• {timeAgo(rp.createdAt)}</span></div><h3 className="font-bold text-lg text-gray-800 leading-snug line-clamp-2 group-hover:text-red-600 transition-colors mb-2">{rp.title}</h3><div className="mt-auto pt-3 border-t border-gray-50 flex items-center justify-between text-xs text-gray-500"><span>By {rp.authorName}</span><div className="flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">visibility</span> {formatCount(rp.viewCount)}</div></div></div></div>)}</div></div>}
                     
-                    <div ref={commentSectionRef} className="mt-8 px-4 md:px-0">
-                        <div className="glass-card p-6 md:p-8 bg-white border border-gray-100 shadow-md">
-                            <h2 className="text-2xl font-black mb-8 flex items-center gap-3 text-gray-900">
+                    <AdBanner slotType="post" className="mb-0 md:mb-8" />
+
+                    {relatedPosts.length > 0 && (
+                        <div className="mb-8 md:mb-12 px-0 md:px-0">
+                            <h2 className="text-2xl font-bold mb-6 text-gray-900 flex items-center gap-2 px-4 md:px-0">
+                                <span className="w-1 h-8 bg-red-600 rounded-full"></span>Related News
+                            </h2>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-0 md:gap-6">
+                                {relatedPosts.map(rp => (
+                                    <div key={rp.id} onClick={() => onViewPost(rp.id)} className="glass-card overflow-hidden cursor-pointer group hover:shadow-lg transition-all border-y md:border border-gray-100 bg-white flex flex-col rounded-none md:rounded-2xl">
+                                        <div className="w-full aspect-video overflow-hidden relative bg-gray-100 flex items-center justify-center">
+                                            <img 
+                                                src={rp.thumbnailUrl} 
+                                                alt={rp.title} 
+                                                className="w-full h-full object-cover transition-transform duration-700 md:group-hover:scale-110" 
+                                            />
+                                            <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md text-white text-[8px] px-2 py-1 rounded font-black uppercase tracking-widest">
+                                                {rp.category}
+                                            </div>
+                                        </div>
+                                        <div className="p-4 flex-grow flex flex-col">
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <span className="text-xs text-gray-400 font-bold uppercase tracking-tighter">{timeAgo(rp.createdAt)}</span>
+                                            </div>
+                                            <h3 className="font-extrabold text-lg text-gray-900 leading-tight line-clamp-2 group-hover:text-red-600 transition-colors mb-4">{rp.title}</h3>
+                                            <div className="mt-auto pt-3 border-t border-gray-50 flex items-center justify-between text-[10px] font-black uppercase text-gray-400 tracking-wider">
+                                                <span>By {rp.authorName}</span>
+                                                <div className="flex items-center gap-1">
+                                                    <span className="material-symbols-outlined text-[14px]">visibility</span>
+                                                    <span>{formatCount(rp.viewCount)}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                    
+                    <div ref={commentSectionRef} className="mt-0 md:mt-8 px-0 md:px-0">
+                        <div className="glass-card p-4 md:p-8 bg-white border-y md:border border-gray-100 shadow-sm md:shadow-md rounded-none md:rounded-2xl">
+                            <h2 className="text-2xl font-black mb-8 flex items-center gap-3 text-gray-900 px-2 md:px-0">
                                 <span className="material-symbols-outlined text-blue-600 text-3xl">forum</span> 
                                 Comments 
                                 <span className="bg-gray-100 text-gray-500 px-3 py-1 rounded-full text-sm font-bold">{formatCount(comments.length)}</span>
@@ -576,8 +642,8 @@ const PostDetailPage: React.FC<PostDetailPageProps> = ({ postId, currentUser, on
                                     } finally { 
                                         setIsSubmittingComment(false); 
                                     } 
-                                }} className="mb-12 flex gap-4 bg-gray-50 p-4 md:p-6 rounded-3xl border border-gray-100">
-                                    <img src={currentUser.profilePicUrl} className="w-12 h-12 rounded-full flex-shrink-0 border-2 border-white shadow-sm" alt="" />
+                                }} className="mb-12 flex gap-4 bg-gray-50 p-4 md:p-6 rounded-none md:rounded-3xl border-y md:border border-gray-100 -mx-4 md:mx-0">
+                                    <img src={currentUser.profilePicUrl} className="w-10 h-10 md:w-12 md:h-12 rounded-full flex-shrink-0 border-2 border-white shadow-sm" alt="" />
                                     <div className="flex-grow flex flex-col gap-3">
                                         <textarea 
                                             ref={commentInputRef} 
@@ -600,7 +666,7 @@ const PostDetailPage: React.FC<PostDetailPageProps> = ({ postId, currentUser, on
                                     </div>
                                 </form>
                             ) : (
-                                <div className="mb-12 p-8 bg-blue-50 rounded-3xl border border-blue-100 text-center">
+                                <div className="mb-12 p-8 bg-blue-50 rounded-none md:rounded-3xl border-y md:border border-blue-100 text-center -mx-4 md:mx-0">
                                     <p className="text-blue-800 font-bold mb-4">Sign in to join the conversation</p>
                                     <button onClick={onLogin} className="px-8 py-2.5 bg-blue-600 text-white rounded-xl font-black shadow-md hover:bg-blue-700 active:scale-95 transition-all">Login / Sign Up</button>
                                 </div>

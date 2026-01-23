@@ -184,119 +184,111 @@ const PostCard: React.FC<PostCardProps> = React.memo(({ post, currentUser, onLog
     
     return (
         <>
-            <div onClick={() => onViewPost(post.id)} className="glass-card overflow-hidden transition-all duration-300 cursor-pointer flex flex-col h-full group hover:shadow-xl border border-gray-100 relative">
-                <div className="p-3 flex items-center gap-2">
-                    <img onClick={(e) => { e.stopPropagation(); onViewUser(post.authorId); }} src={authorProfilePicUrl} alt={authorName} className="w-8 h-8 rounded-full object-cover cursor-pointer ring-1 ring-gray-100 relative z-20" />
+            <div onClick={() => onViewPost(post.id)} className="bg-white md:glass-card overflow-hidden transition-all duration-300 cursor-pointer flex flex-col h-full group md:hover:shadow-xl border-y md:border border-gray-100 relative rounded-none md:rounded-2xl">
+                <div className="p-3 flex items-center gap-3">
+                    <img onClick={(e) => { e.stopPropagation(); onViewUser(post.authorId); }} src={authorProfilePicUrl} alt={authorName} className="w-9 h-9 rounded-full object-cover cursor-pointer ring-2 ring-gray-50 relative z-20" />
                     <div className="flex-grow min-w-0 relative z-20">
                         <div className="flex items-center gap-2">
-                            <p onClick={(e) => { e.stopPropagation(); onViewUser(post.authorId); }} className="font-bold text-gray-800 cursor-pointer hover:text-blue-600 text-sm truncate">{authorName}</p>
+                            <p onClick={(e) => { e.stopPropagation(); onViewUser(post.authorId); }} className="font-bold text-gray-900 cursor-pointer hover:text-blue-600 text-sm truncate">{authorName}</p>
                             {(!currentUser || currentUser.uid !== post.authorId) && (
                                 <button 
                                     onClick={handleFollowClick} 
                                     className={`
-                                        px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full transition-all duration-300 shadow-sm
+                                        px-2.5 py-0.5 text-[9px] font-black uppercase tracking-widest rounded-full transition-all duration-300
                                         ${isFollowing 
-                                            ? 'bg-gray-100 text-gray-500 border border-gray-200' 
-                                            : 'bg-gradient-to-r from-red-600 to-red-500 text-white hover:from-red-700 hover:to-red-600 hover:shadow-md active:scale-95'}
+                                            ? 'bg-gray-100 text-gray-400 border border-gray-200' 
+                                            : 'bg-red-600 text-white shadow-sm active:scale-95'}
                                     `}
                                 >
-                                    {isFollowing ? (
-                                        <div className="flex items-center gap-0.5">
-                                            <span className="material-symbols-outlined text-[12px] font-bold">done</span>
-                                            {t('following')}
-                                        </div>
-                                    ) : t('follow')}
+                                    {isFollowing ? t('following') : t('follow')}
                                 </button>
                             )}
                         </div>
-                        <p className="text-[10px] text-gray-400">{timeAgo}</p>
+                        <p className="text-[10px] text-gray-400 font-medium uppercase tracking-tight">{timeAgo} • {post.category}</p>
                     </div>
                 </div>
                 
-                <div className="w-full h-48 bg-gray-50 overflow-hidden relative flex items-center justify-center">
+                <div className="w-full aspect-video bg-gray-100 overflow-hidden relative flex items-center justify-center">
                      {post.thumbnailUrl ? (
                         <img 
                             src={post.thumbnailUrl} 
                             alt={post.title} 
-                            className="w-full h-full object-contain transition-all duration-500" 
+                            className="w-full h-full object-cover transition-all duration-700 md:group-hover:scale-105" 
                         />
                     ) : (
                         <div className="flex flex-col items-center justify-center h-full text-gray-300">
                             <span className="material-symbols-outlined text-4xl">image</span>
                         </div>
                     )}
+                    <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md text-white text-[8px] px-1.5 py-0.5 rounded font-black uppercase tracking-widest">Article</div>
                 </div>
 
                 <div className="p-4 flex flex-col flex-grow">
-                    <h3 className="text-lg font-bold text-gray-800 mb-2 line-clamp-2 leading-snug group-hover:text-red-600 transition-colors">{post.title}</h3>
-                    <p className="text-gray-500 line-clamp-2 text-sm leading-relaxed">{displayContent}</p>
-                </div>
-                
-                 <div className="px-4 py-2 border-t border-gray-50 flex justify-between items-center text-gray-400 bg-white mt-auto relative z-20">
-                    <div className="flex items-center gap-2">
-                        <div className="flex items-center gap-1 p-2" title="Views">
-                            <span className="material-symbols-outlined text-lg">visibility</span>
-                            <span className="text-xs font-semibold">{formatCount(post.viewCount || 0)}</span>
-                        </div>
-                        <button 
-                            onClick={handleLike} 
-                            className={`flex items-center gap-1 transition-colors group/like p-2 rounded-full hover:bg-red-50 relative z-30 ${isLiked ? 'text-red-500' : 'hover:text-red-500'}`} 
-                            title="Likes"
-                        >
-                            <span 
-                                className="material-symbols-outlined text-lg transition-all"
-                                style={{ fontVariationSettings: `'FILL' ${isLiked ? 1 : 0}`}}
+                    <h3 className="text-lg md:text-xl font-extrabold text-gray-900 mb-2 line-clamp-2 leading-tight group-hover:text-red-600 transition-colors">{post.title}</h3>
+                    <p className="text-gray-600 line-clamp-2 text-sm leading-relaxed mb-4">{displayContent}</p>
+                    
+                    <div className="mt-auto flex justify-between items-center text-gray-400 border-t border-gray-50 pt-3 relative z-20">
+                        <div className="flex items-center gap-4">
+                            <button 
+                                onClick={handleLike} 
+                                className={`flex items-center gap-1.5 group/like relative z-30 ${isLiked ? 'text-red-500' : 'hover:text-red-500'}`} 
                             >
-                                favorite
-                            </span>
-                            <span className="text-xs font-semibold">{formatCount(likeCount)}</span>
-                        </button>
-                        <button 
-                            onClick={(e) => { 
-                                e.preventDefault();
-                                e.stopPropagation(); 
-                                onNavigate(View.PostDetail, { postId: post.id, focusComment: true }); 
-                            }}
-                            className="flex items-center gap-1 hover:text-blue-600 transition-colors p-2 rounded-full hover:bg-blue-50 relative z-30" 
-                            title="Comments"
-                        >
-                            <span className="material-symbols-outlined text-lg">chat_bubble</span>
-                            <span className="text-xs font-semibold">{formatCount(commentCount)}</span>
-                        </button>
-                         <button 
-                            onClick={handleShare} 
-                            className="flex items-center gap-1 text-green-600 hover:text-green-700 transition-colors p-2 rounded-full hover:bg-green-50 relative z-30" 
-                            title="Share on WhatsApp"
-                        >
-                            <i className="fa-brands fa-whatsapp text-lg"></i>
-                            <span className="text-xs font-semibold">{formatCount(post.shareCount || 0)}</span>
-                        </button>
-                    </div>
-                     <div className="relative z-30">
-                        <button onClick={(e) => { e.stopPropagation(); setIsMenuOpen(v => !v); }} className="p-2 rounded-full hover:bg-gray-100 text-gray-400"><span className="material-symbols-outlined text-lg">more_vert</span></button>
-                         {isMenuOpen && (
-                            <div className="absolute bottom-full right-0 mb-1 w-32 bg-white rounded-lg shadow-xl border border-gray-100 overflow-hidden z-40">
-                                {(isCurrentUserPost || isAdmin) && (
-                                    <>
-                                        <button onClick={handleEditClick} className="flex items-center gap-2 w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors">
-                                            <span className="material-symbols-outlined text-sm">edit</span>
-                                            {t('edit')}
-                                        </button>
-                                        <button onClick={handleDeleteClick} className="flex items-center gap-2 w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50 transition-colors">
-                                            <span className="material-symbols-outlined text-sm">delete</span>
-                                            {t('delete')}
-                                        </button>
-                                        <div className="border-b border-gray-100 my-1"></div>
-                                    </>
-                                )}
-                                <button onClick={handleReportClick} className="flex items-center gap-2 w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 transition-colors">
-                                    <span className="material-symbols-outlined text-sm">flag</span>
-                                    {t('report')}
-                                </button>
+                                <span 
+                                    className="material-symbols-outlined text-[22px] transition-all"
+                                    style={{ fontVariationSettings: `'FILL' ${isLiked ? 1 : 0}`}}
+                                >
+                                    favorite
+                                </span>
+                                <span className="text-xs font-bold">{formatCount(likeCount)}</span>
+                            </button>
+                            <button 
+                                onClick={(e) => { 
+                                    e.preventDefault();
+                                    e.stopPropagation(); 
+                                    onNavigate(View.PostDetail, { postId: post.id, focusComment: true }); 
+                                }}
+                                className="flex items-center gap-1.5 hover:text-blue-600 transition-colors relative z-30" 
+                            >
+                                <span className="material-symbols-outlined text-[22px]">chat_bubble</span>
+                                <span className="text-xs font-bold">{formatCount(commentCount)}</span>
+                            </button>
+                            <div className="flex items-center gap-1.5">
+                                <span className="material-symbols-outlined text-[20px]">visibility</span>
+                                <span className="text-xs font-bold">{formatCount(post.viewCount || 0)}</span>
                             </div>
-                         )}
+                        </div>
+                        <div className="flex items-center gap-3 relative z-30">
+                            <button 
+                                onClick={handleShare} 
+                                className="text-green-600 p-1.5 rounded-full hover:bg-green-50 active:scale-90 transition-all" 
+                            >
+                                <i className="fa-brands fa-whatsapp text-xl"></i>
+                            </button>
+                            <button onClick={(e) => { e.stopPropagation(); setIsMenuOpen(v => !v); }} className="p-1.5 rounded-full hover:bg-gray-100 text-gray-400"><span className="material-symbols-outlined text-xl">more_vert</span></button>
+                             {isMenuOpen && (
+                                <div className="absolute bottom-full right-0 mb-2 w-36 bg-white rounded-xl shadow-2xl border border-gray-100 overflow-hidden z-40 animate-in fade-in zoom-in-95">
+                                    {(isCurrentUserPost || isAdmin) && (
+                                        <>
+                                            <button onClick={handleEditClick} className="flex items-center gap-2 w-full text-left px-4 py-3 text-xs font-bold text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors">
+                                                <span className="material-symbols-outlined text-sm">edit</span>
+                                                {t('edit')}
+                                            </button>
+                                            <button onClick={handleDeleteClick} className="flex items-center gap-2 w-full text-left px-4 py-3 text-xs font-bold text-red-600 hover:bg-red-50 transition-colors">
+                                                <span className="material-symbols-outlined text-sm">delete</span>
+                                                {t('delete')}
+                                            </button>
+                                            <div className="border-b border-gray-100"></div>
+                                        </>
+                                    )}
+                                    <button onClick={handleReportClick} className="flex items-center gap-2 w-full text-left px-4 py-3 text-xs font-bold text-gray-700 hover:bg-gray-50 transition-colors">
+                                        <span className="material-symbols-outlined text-sm">flag</span>
+                                        {t('report')}
+                                    </button>
+                                </div>
+                             )}
+                        </div>
                     </div>
-                 </div>
+                </div>
             </div>
             
             <ConfirmationModal

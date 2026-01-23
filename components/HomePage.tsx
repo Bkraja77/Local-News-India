@@ -28,20 +28,15 @@ const newsCategories = ['Recent News', 'Politics', 'Crime', 'Sports', 'Entertain
 
 // Skeleton Loader for PostCard
 const SkeletonPostCard = () => (
-  <div className="glass-card overflow-hidden h-full flex flex-col border border-gray-100">
+  <div className="glass-card overflow-hidden h-full flex flex-col border border-gray-100 md:rounded-2xl">
     <div className="p-3 flex items-center gap-2">
       <div className="w-8 h-8 rounded-full bg-gray-200"></div>
       <div className="flex-1 h-3 bg-gray-200 rounded w-1/2"></div>
     </div>
-    <div className="w-full h-48 bg-gray-200"></div>
+    <div className="w-full aspect-video bg-gray-200"></div>
     <div className="p-4 flex-grow space-y-3">
       <div className="h-6 bg-gray-200 rounded w-3/4"></div>
       <div className="h-4 bg-gray-200 rounded w-full"></div>
-      <div className="h-4 bg-gray-200 rounded w-2/3"></div>
-    </div>
-    <div className="px-4 py-3 border-t border-gray-5 flex justify-between bg-white/50">
-       <div className="w-20 h-4 bg-gray-200 rounded"></div>
-       <div className="w-10 h-4 bg-gray-200 rounded"></div>
     </div>
   </div>
 );
@@ -506,10 +501,10 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate, currentUser, onLogin, o
 
                 <div className="flex flex-col w-full">
                     <main className="flex-grow w-full max-w-7xl mx-auto md:px-4 md:py-6">
-                        <div className="p-4 md:p-0 w-full">
+                        <div className="p-0 w-full">
                             
                             {loading && (
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 md:gap-8">
                                     {[...Array(8)].map((_, i) => <SkeletonPostCard key={i} />)}
                                 </div>
                             )}
@@ -518,10 +513,10 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate, currentUser, onLogin, o
                             
                             {/* VIEW MODE: GROUPED SECTIONS (Dashboard style) */}
                             {!loading && !isFlatView && !searchQuery.trim() && groupedSections.length > 0 && (
-                                <div className="space-y-12">
+                                <div className="space-y-6 md:space-y-12">
                                     {/* Dashboard Welcome Context - Only show for Near Me to give context about location */}
                                     {(selectedCategory === NEAR_ME || selectedState) && (
-                                        <div className="flex items-center justify-between mb-4">
+                                        <div className="flex items-center justify-between mb-2 px-4 md:px-0">
                                             <h2 className="text-lg font-bold text-gray-700 flex items-center gap-2">
                                                 {selectedCategory === NEAR_ME && (
                                                     <>
@@ -539,30 +534,27 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate, currentUser, onLogin, o
                                     )}
 
                                     {groupedSections.map((section, idx) => (
-                                        <section key={section.title} className="mb-12">
+                                        <section key={section.title} className="mb-0 md:mb-12">
                                             {/* Insert Ad Banner after first section */}
-                                            {idx === 1 && <AdBanner slotType="home" />}
+                                            {idx === 1 && <div className="px-0 md:px-0"><AdBanner slotType="home" /></div>}
 
-                                            <div className="relative flex items-center justify-between mb-6 pb-4 border-b border-gray-200/60">
-                                                <div className="flex items-center gap-4">
+                                            <div className="relative flex items-center justify-between mb-4 md:mb-6 pb-2 md:pb-4 border-b border-gray-200/60 mx-4 md:mx-0 pt-4 md:pt-0">
+                                                <div className="flex items-center gap-3 md:gap-4">
                                                      <div className="hidden md:block w-1.5 h-8 bg-gradient-to-b from-red-500 to-red-700 rounded-full shadow-sm"></div>
-                                                     <h2 className="text-2xl md:text-3xl font-extrabold text-gray-800 tracking-tight">
+                                                     <h2 className="text-xl md:text-3xl font-extrabold text-gray-800 tracking-tight">
                                                         {t(section.title.toLowerCase()) || section.title}
                                                      </h2>
                                                 </div>
                                                 <button 
                                                     onClick={() => handleViewAll(section.categoryKey)}
-                                                    className="group flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-red-600 bg-red-50 hover:bg-red-600 hover:text-white rounded-full transition-all duration-300 shadow-sm hover:shadow-md"
+                                                    className="group flex items-center gap-1.5 px-4 py-2 text-xs md:text-sm font-bold text-red-600 bg-red-50 hover:bg-red-600 hover:text-white rounded-full transition-all duration-300 shadow-sm"
                                                 >
                                                     <span>View All</span>
-                                                    <span className="material-symbols-outlined text-lg transition-transform duration-300 group-hover:translate-x-1">arrow_forward</span>
+                                                    <span className="material-symbols-outlined text-base md:text-lg transition-transform duration-300 group-hover:translate-x-1">arrow_forward</span>
                                                 </button>
-                                                
-                                                {/* Decorative gradient line at bottom left */}
-                                                <div className="absolute bottom-0 left-0 w-1/3 h-[2px] bg-gradient-to-r from-red-500/50 to-transparent rounded-full"></div>
                                             </div>
                                             
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8">
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-0 md:gap-8">
                                                 {section.posts.map((post) => (
                                                     <div key={post.id} className="h-full">
                                                         <PostCard 
@@ -584,7 +576,7 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate, currentUser, onLogin, o
                                     ))}
                                     
                                     {groupedSections.length === 0 && !loading && (
-                                         <div className="text-center py-20 glass-card">
+                                         <div className="text-center py-20 bg-white md:glass-card border-y md:border border-gray-100">
                                             <span className="material-symbols-outlined text-6xl text-gray-300 mb-4">feed</span>
                                             <p className="text-gray-700 text-lg font-medium">{t('noPostsFound')}</p>
                                          </div>
@@ -595,23 +587,23 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate, currentUser, onLogin, o
                             {/* VIEW MODE: FLAT GRID (Specific Category or Search) */}
                             {!loading && (isFlatView || searchQuery.trim()) && (
                                 <div>
-                                     <div className="mb-6 px-1 flex justify-between items-center border-b border-gray-200 pb-4">
-                                        <h2 className="text-2xl md:text-3xl font-extrabold text-gray-800 tracking-tight">
+                                     <div className="mb-4 md:mb-6 px-4 md:px-1 flex justify-between items-center border-b border-gray-200 pb-3 md:pb-4 pt-4 md:pt-0">
+                                        <h2 className="text-xl md:text-3xl font-extrabold text-gray-800 tracking-tight">
                                             {searchQuery ? `Search Results: "${searchQuery}"` : t(selectedCategory.toLowerCase()) || selectedCategory}
                                         </h2>
                                         {!searchQuery && selectedCategory !== 'Recent News' && selectedCategory !== NEAR_ME && (
                                             <button 
                                                 onClick={() => handleCategorySelect('Recent News')}
-                                                className="text-sm font-bold text-gray-500 hover:text-red-600 flex items-center gap-1 px-4 py-2 rounded-full hover:bg-gray-100 transition-colors"
+                                                className="text-xs md:text-sm font-bold text-gray-500 hover:text-red-600 flex items-center gap-1 px-3 py-1.5 rounded-full hover:bg-gray-100 transition-colors"
                                             >
                                                 <span className="material-symbols-outlined text-base">arrow_back</span>
-                                                Back to Home
+                                                Back
                                             </button>
                                         )}
                                     </div>
                                     
                                     {filteredPosts.length > 0 ? (
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-0 md:gap-8">
                                             {filteredPosts.map((post, index) => (
                                                 <div key={post.id} className="h-full">
                                                     <PostCard 
@@ -630,18 +622,18 @@ const HomePage: React.FC<HomePageProps> = ({ onNavigate, currentUser, onLogin, o
                                             ))}
                                         </div>
                                     ) : (
-                                         <div className="text-center py-20 glass-card">
+                                         <div className="text-center py-20 bg-white md:glass-card border-y md:border border-gray-100">
                                             <span className="material-symbols-outlined text-6xl text-gray-300 mb-4">feed</span>
                                             <p className="text-gray-700 text-lg font-medium">{t('noPostsFound')}</p>
                                             {searchQuery && (
                                                 <button 
                                                     onClick={() => setSearchQuery('')}
-                                                    className="mt-4 text-blue-600 hover:underline text-sm"
+                                                    className="mt-4 text-blue-600 hover:underline text-sm font-bold"
                                                 >
                                                     Clear Search
                                                 </button>
                                             )}
-                                        </div>
+                                         </div>
                                     )}
                                 </div>
                             )}

@@ -39,7 +39,7 @@ const UserPage: React.FC<UserPageProps> = ({ onBack, currentUser, onLogout, onNa
     const [loading, setLoading] = useState(true);
     
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-    const [itemToDelete, setItemToDelete] = useState<{ id: string; type: 'post' | 'video' | 'draft' } | null>(null);
+    const [itemToDelete, setItemToDelete] = useState<{ id: string; type: 'post' | 'video' | 'draft'; thumbnailUrl?: string; videoUrl?: string } | null>(null);
     
     const [activeList, setActiveList] = useState<'followers' | 'following' | null>(null);
     const [activeTab, setActiveTab] = useState<'posts' | 'videos' | 'drafts'>('posts');
@@ -77,12 +77,21 @@ const UserPage: React.FC<UserPageProps> = ({ onBack, currentUser, onLogout, onNa
         try {
             if (itemToDelete.type === 'draft') {
                 await db.collection("users").doc(currentUser.uid).collection("drafts").doc(itemToDelete.id).delete();
+            } else if (itemToDelete.type === 'video') {
+                await db.collection("videos").doc(itemToDelete.id).delete();
+                // Cleanup Storage
+                if (itemToDelete.thumbnailUrl?.includes('firebasestorage')) {
+                    storage.refFromURL(itemToDelete.thumbnailUrl).delete().catch(() => {});
+                }
+                if (itemToDelete.videoUrl?.includes('firebasestorage')) {
+                    storage.refFromURL(itemToDelete.videoUrl).delete().catch(() => {});
+                }
             } else {
-                await db.collection(itemToDelete.type === 'post' ? "posts" : "videos").doc(itemToDelete.id).delete();
+                await db.collection("posts").doc(itemToDelete.id).delete();
             }
             showToast("Content deleted.", "success");
         } catch (e) { showToast("Failed to delete.", "error"); }
-        finally { setIsDeleteModalOpen(false); }
+        finally { setIsDeleteModalOpen(false); setItemToDelete(null); }
     };
 
     const handleDraftClick = (draft: Draft) => {
@@ -214,7 +223,7 @@ const UserPage: React.FC<UserPageProps> = ({ onBack, currentUser, onLogout, onNa
                         </div>
 
                         {/* Content Grid */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+                        <div className={`${activeTab === 'videos' ? 'grid grid-cols-3 gap-1 md:gap-4' : 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6'}`}>
                             {activeTab === 'posts' && posts.map(post => (
                                 <div key={post.id} className="glass-card overflow-hidden h-full flex flex-col group border border-gray-100/50 hover:shadow-xl transition-all">
                                     <div className="relative h-48 overflow-hidden bg-gray-100 cursor-pointer" onClick={() => onViewPost(post.id)}>
@@ -229,14 +238,42 @@ const UserPage: React.FC<UserPageProps> = ({ onBack, currentUser, onLogout, onNa
                             ))}
 
                             {activeTab === 'videos' && videos.map(video => (
-                                <div key={video.id} className="glass-card overflow-hidden h-full flex flex-col group border border-gray-100/50 hover:shadow-xl transition-all">
-                                    <div className="relative aspect-video bg-black flex items-center justify-center overflow-hidden cursor-pointer" onClick={() => onNavigate(View.Videos, { videoId: video.id })}>
-                                        <img src={video.thumbnailUrl} className="h-full w-full object-cover opacity-80 group-hover:scale-105 transition-transform duration-500" />
-                                        <span className="absolute flex items-center justify-center material-symbols-outlined text-white text-5xl group-hover:scale-110 transition-transform drop-shadow-lg">play_circle</span>
+                                <div key={video.id} className="relative aspect-[9/16] bg-black group overflow-hidden cursor-pointer rounded-lg md:rounded-xl shadow-sm" onClick={() => onNavigate(View.Videos, { videoId: video.id })}>
+                                    <img src={video.thumbnailUrl} className="h-full w-full object-cover opacity-80 group-hover:scale-110 transition-transform duration-700" alt={video.title} />
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent"></div>
+                                    
+                                    {/* View Count Overlay */}
+                                    <div className="absolute bottom-2 left-2 flex items-center gap-1 text-white text-[10px] font-black drop-shadow-md">
+                                        <span className="material-symbols-outlined text-sm font-black">play_arrow</span>
+                                        {formatCount(video.viewCount)}
                                     </div>
-                                    <div className="p-4 flex-grow"><h3 className="font-bold text-sm text-gray-800 line-clamp-2">{video.title}</h3></div>
-                                    <div className="px-2 pb-2 flex justify-end gap-1">
-                                        <button onClick={() => { setItemToDelete({ id: video.id, type: 'video' }); setIsDeleteModalOpen(true); }} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"><span className="material-symbols-outlined text-[20px]">delete</span></button>
+
+                                    {/* Action Group */}
+                                    <div className="absolute top-1.5 right-1.5 flex flex-col gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button 
+                                            onClick={(e) => { 
+                                                e.stopPropagation(); 
+                                                onNavigate(View.CreateVideo, { videoId: video.id });
+                                            }} 
+                                            className="w-8 h-8 bg-white/90 backdrop-blur-md rounded-full text-blue-600 flex items-center justify-center shadow-lg active:scale-90 transition-all"
+                                        >
+                                            <span className="material-symbols-outlined text-[18px]">edit</span>
+                                        </button>
+                                        <button 
+                                            onClick={(e) => { 
+                                                e.stopPropagation(); 
+                                                setItemToDelete({ 
+                                                    id: video.id, 
+                                                    type: 'video',
+                                                    thumbnailUrl: video.thumbnailUrl,
+                                                    videoUrl: video.videoUrl
+                                                }); 
+                                                setIsDeleteModalOpen(true); 
+                                            }} 
+                                            className="w-8 h-8 bg-red-600 text-white flex items-center justify-center rounded-full shadow-lg active:scale-90 transition-all"
+                                        >
+                                            <span className="material-symbols-outlined text-[18px]">delete</span>
+                                        </button>
                                     </div>
                                 </div>
                             ))}

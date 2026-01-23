@@ -36,13 +36,13 @@ const SkeletonPublicProfile = () => (
                                 <div className="h-8 w-48 bg-gray-200 rounded-lg"></div>
                                 <div className="h-4 w-32 bg-gray-200 rounded"></div>
                             </div>
-                        </div>
+                         </div>
                     </div>
                 </div>
-                <div className="px-4">
-                    <div className="h-10 w-full bg-gray-100 rounded-lg mb-6"></div>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        {[1, 2, 3, 4].map(i => <div key={i} className="aspect-video bg-gray-100 rounded-xl"></div>)}
+                <div className="px-0 md:px-4">
+                    <div className="h-10 w-full bg-gray-100 rounded-lg mb-6 mx-4 md:mx-0"></div>
+                    <div className="grid grid-cols-3 gap-1 md:gap-4">
+                        {[1, 2, 3, 4, 5, 6].map(i => <div key={i} className="aspect-[9/16] bg-gray-100 md:rounded-xl"></div>)}
                     </div>
                 </div>
              </div>
@@ -175,8 +175,8 @@ const PublicProfilePage: React.FC<PublicProfilePageProps> = ({ userId, currentUs
                         </div>
                     </div>
 
-                    <div className="px-4">
-                        <div className="flex border-b border-gray-100 mb-8 overflow-x-auto scrollbar-hide sticky top-0 bg-white/95 backdrop-blur-sm z-20">
+                    <div className="px-0 md:px-4">
+                        <div className="flex border-b border-gray-100 mb-8 overflow-x-auto scrollbar-hide sticky top-0 bg-white/95 backdrop-blur-sm z-20 px-4 md:px-0">
                             <button onClick={() => setActiveTab('posts')} className={`px-8 py-4 text-xs font-black uppercase tracking-[0.2em] transition-all relative whitespace-nowrap ${activeTab === 'posts' ? 'text-red-600' : 'text-gray-400 hover:text-gray-600'}`}>Articles{activeTab === 'posts' && <div className="absolute bottom-0 left-0 w-full h-1.5 bg-red-600 rounded-t-full"></div>}</button>
                             <button onClick={() => setActiveTab('videos')} className={`px-8 py-4 text-xs font-black uppercase tracking-[0.2em] transition-all relative whitespace-nowrap ${activeTab === 'videos' ? 'text-red-600' : 'text-gray-400 hover:text-gray-600'}`}>Videos{activeTab === 'videos' && <div className="absolute bottom-0 left-0 w-full h-1.5 bg-red-600 rounded-t-full"></div>}</button>
                         </div>
@@ -184,9 +184,9 @@ const PublicProfilePage: React.FC<PublicProfilePageProps> = ({ userId, currentUs
                         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                             {activeTab === 'posts' ? (
                                 posts.length > 0 ? (
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-0 md:gap-6">
                                         {posts.map(post => (
-                                            <div key={post.id} onClick={() => onViewPost(post.id)} className="glass-card group overflow-hidden cursor-pointer flex flex-col h-full border border-gray-100 hover:shadow-2xl transition-all duration-300">
+                                            <div key={post.id} onClick={() => onViewPost(post.id)} className="group overflow-hidden cursor-pointer flex flex-col h-full border-y md:border border-gray-100 bg-white md:glass-card hover:shadow-2xl transition-all duration-300 md:rounded-2xl">
                                                 <div className="aspect-video relative overflow-hidden bg-gray-50"><img src={post.thumbnailUrl} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" alt="" /><div className="absolute top-3 right-3 bg-black/60 backdrop-blur-md text-white text-[9px] px-2 py-1 rounded font-black uppercase tracking-widest">{post.category}</div></div>
                                                 <div className="p-5 flex flex-col flex-grow"><h3 className="font-bold text-gray-800 line-clamp-2 leading-snug group-hover:text-red-600 transition-colors text-lg">{post.title}</h3><div className="mt-auto pt-5 flex justify-between items-center text-[10px] text-gray-400 font-black uppercase tracking-[0.1em] border-t border-gray-50"><span>{post.createdAt ? new Date(post.createdAt).toLocaleDateString() : ''}</span><div className="flex items-center gap-1.5"><span className="material-symbols-outlined text-[16px]">visibility</span>{formatCount(post.viewCount)}</div></div></div>
                                             </div>
@@ -195,12 +195,24 @@ const PublicProfilePage: React.FC<PublicProfilePageProps> = ({ userId, currentUs
                                 ) : <div className="py-32 text-center flex flex-col items-center"><span className="material-symbols-outlined text-7xl text-gray-100 mb-4">article</span><p className="text-gray-300 font-black uppercase tracking-[0.3em] text-sm">No articles published</p></div>
                             ) : (
                                 videos.length > 0 ? (
-                                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                                    <div className="grid grid-cols-3 gap-1 md:gap-4 lg:grid-cols-5">
                                         {videos.map(video => (
-                                            <div key={video.id} onClick={() => currentUser ? onNavigate(View.Videos, { videoId: video.id }) : onLogin()} className="group relative aspect-[9/16] bg-black rounded-2xl overflow-hidden cursor-pointer shadow-lg active:scale-95 transition-all">
-                                                <img src={video.thumbnailUrl} className="w-full h-full object-cover opacity-80 group-hover:scale-110 transition-transform duration-700" alt="" /><div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/10 to-transparent"></div>
-                                                <div className="absolute inset-0 flex items-center justify-center"><div className="bg-white/10 backdrop-blur-md rounded-full p-4 border border-white/20 transform group-hover:scale-110 transition-transform shadow-2xl"><span className="material-symbols-outlined text-white text-4xl opacity-90 drop-shadow-2xl">play_arrow</span></div></div>
-                                                <div className="absolute bottom-0 left-0 w-full p-4 pointer-events-none"><p className="text-white text-xs font-bold line-clamp-2 drop-shadow-md leading-relaxed">{video.title}</p><div className="flex items-center gap-2 mt-2 text-[9px] text-white/80 font-black uppercase tracking-widest"><span className="material-symbols-outlined text-[14px]">visibility</span>{formatCount(video.viewCount)}</div></div>
+                                            <div key={video.id} onClick={() => currentUser ? onNavigate(View.Videos, { videoId: video.id }) : onLogin()} className="group relative aspect-[9/16] bg-black overflow-hidden cursor-pointer shadow-sm active:scale-95 transition-all rounded-lg md:rounded-2xl border border-gray-100">
+                                                <img src={video.thumbnailUrl} className="w-full h-full object-cover opacity-80 group-hover:scale-110 transition-transform duration-700" alt={video.title} />
+                                                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent"></div>
+                                                
+                                                {/* Mini Overlay Info */}
+                                                <div className="absolute bottom-2 left-2 flex items-center gap-1 text-white text-[10px] font-black drop-shadow-md">
+                                                    <span className="material-symbols-outlined text-sm font-black">play_arrow</span>
+                                                    {formatCount(video.viewCount)}
+                                                </div>
+                                                
+                                                {/* Tooltip on long title */}
+                                                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                                                     <div className="bg-black/40 backdrop-blur-sm p-2 rounded-full border border-white/20">
+                                                        <span className="material-symbols-outlined text-white text-2xl">play_circle</span>
+                                                     </div>
+                                                </div>
                                             </div>
                                         ))}
                                     </div>

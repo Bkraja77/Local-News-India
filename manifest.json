@@ -2,16 +2,17 @@
 {
   "name": "Public Tak",
   "short_name": "Public Tak",
-  "description": "Your trusted source for local news, breaking updates, politics, sports, and entertainment from across India.",
-  "id": "/",
+  "description": "Your trusted source for hyper-local news, breaking updates, politics, sports, and entertainment from across India.",
+  "id": "com.publictak.app",
   "start_url": "/?source=pwa",
   "display": "standalone",
+  "display_override": ["window-controls-overlay", "minimal-ui"],
   "orientation": "portrait",
   "background_color": "#ffffff",
   "theme_color": "#dc2626",
   "scope": "/",
-  "categories": ["news", "magazines", "social"],
-  "lang": "en",
+  "categories": ["news", "magazines", "social", "government"],
+  "lang": "en-IN",
   "dir": "ltr",
   "icons": [
     {
@@ -45,22 +46,28 @@
       "sizes": "1000x2000",
       "type": "image/jpeg",
       "form_factor": "narrow",
-      "label": "Latest Hyper-local News"
+      "label": "Hyper-local News Feed"
     },
     {
       "src": "https://images.unsplash.com/photo-1495020689067-958852a7765e?auto=format&fit=crop&w=2000&q=80",
       "sizes": "2000x1200",
       "type": "image/jpeg",
       "form_factor": "wide",
-      "label": "Dashboard View"
+      "label": "Breaking News Dashboard"
     }
   ],
   "shortcuts": [
     {
-      "name": "Create New Post",
-      "short_name": "New Post",
-      "description": "Share news from your area",
+      "name": "Create Post",
+      "short_name": "Post",
+      "description": "Share news from your area immediately",
       "url": "/?page=createPost",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Watch Videos",
+      "short_name": "Videos",
+      "url": "/?page=videos",
       "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
     },
     {
@@ -68,6 +75,12 @@
       "short_name": "Profile",
       "url": "/?page=user",
       "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ],
+  "protocol_handlers": [
+    {
+      "protocol": "web+publictak",
+      "url": "/?query=%s"
     }
   ],
   "share_target": {

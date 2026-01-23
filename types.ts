@@ -110,6 +110,16 @@ export interface Comment {
   authorReplyCreatedAt?: Date;
 }
 
+// Added Reply interface to resolve 'Cannot find name Reply' error in components
+export interface Reply {
+  id: string;
+  content: string;
+  authorId: string;
+  authorName: string;
+  authorProfilePicUrl: string;
+  createdAt: Date;
+}
+
 export interface Notification {
   id: string;
   type: 'new_follower' | 'new_like' | 'new_comment' | 'new_post' | 'new_video' | 'new_share';

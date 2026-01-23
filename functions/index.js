@@ -40,6 +40,7 @@ exports.app = functions.https.onRequest(async (req, res) => {
   // 3. Robust Parameter Check
   const postId = (req.query.postId || req.query.postid || "").trim();
   const userId = (req.query.userId || req.query.userid || "").trim();
+  const videoId = (req.query.videoId || req.query.videoid || "").trim();
 
   // 4. Load Base Template
   let html = "";
@@ -69,6 +70,16 @@ exports.app = functions.https.onRequest(async (req, res) => {
         pageUrl = `${siteDomain}/?postId=${postId}`;
         pageType = "article";
       }
+    } else if (videoId) {
+      const videoDoc = await admin.firestore().collection("videos").doc(videoId).get();
+      if (videoDoc.exists) {
+        const videoData = videoDoc.data();
+        title = videoData.title || defaultTitle;
+        description = videoData.description || `Watch this latest news video on Public Tak.`;
+        image = videoData.thumbnailUrl || defaultImage;
+        pageUrl = `${siteDomain}/?videoId=${videoId}`;
+        pageType = "video.other";
+      }
     } else if (userId) {
       const userDoc = await admin.firestore().collection("users").doc(userId).get();
       if (userDoc.exists) {
@@ -81,12 +92,12 @@ exports.app = functions.https.onRequest(async (req, res) => {
       }
     }
 
-    // Ensure Absolute URL
+    // Ensure Absolute URL for image
     if (image && !image.startsWith('http')) {
         image = `${siteDomain}${image.startsWith('/') ? '' : '/'}${image}`;
     }
 
-    // 6. Generate Meta Tags (CRITICAL: 'og:image' needs the RAW URL for some scrapers)
+    // 6. Generate Meta Tags (CRITICAL: 'og:image' needs explicit dimensions for first scrape)
     const metaTags = `
     <!-- Primary Meta Tags -->
     <title>${escapeText(title)}</title>
@@ -94,7 +105,7 @@ exports.app = functions.https.onRequest(async (req, res) => {
     <meta name="description" content="${escapeText(description)}">
     <link rel="canonical" href="${pageUrl}" />
 
-    <!-- Open Graph / Facebook -->
+    <!-- Open Graph / Facebook / WhatsApp -->
     <meta property="og:type" content="${pageType}">
     <meta property="og:url" content="${pageUrl}">
     <meta property="og:title" content="${escapeText(title)}">
@@ -103,6 +114,7 @@ exports.app = functions.https.onRequest(async (req, res) => {
     <meta property="og:image:secure_url" content="${image}">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
+    <meta property="og:image:type" content="image/jpeg">
     <meta property="og:site_name" content="Public Tak">
 
     <!-- Twitter -->
@@ -113,11 +125,12 @@ exports.app = functions.https.onRequest(async (req, res) => {
     <meta name="twitter:image" content="${image}">
     `;
 
-    // 7. Inject at the very start of <head> for maximum scraper compatibility
-    // We also remove existing title/meta tags from the template to avoid duplicates
+    // 7. Inject tags into <head> and remove duplicates
     let finalHtml = html
       .replace(/<title>.*?<\/title>/gi, '')
       .replace(/<meta\s+name=["']description["'][^>]*>/gi, '')
+      .replace(/<meta\s+property=["']og:.*?["'][^>]*>/gi, '') // Remove existing OG tags
+      .replace(/<meta\s+name=["']twitter:.*?["'][^>]*>/gi, '') // Remove existing Twitter tags
       .replace(/<link\s+rel=["']canonical["'][^>]*>/gi, '')
       .replace("<head>", `<head>${metaTags}`);
 

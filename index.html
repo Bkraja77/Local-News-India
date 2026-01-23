@@ -3,20 +3,22 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     
-    <!-- Google Search Console -->
+    <!-- SEO & Identity -->
     <meta name="google-site-verification" content="9ch0d6PgdTN8z__wHJPxNrXZ1hKTrQmSBgdGmb6rc_g" />
+    <meta name="description" content="Public Tak - Your local news companion for hyper-local updates." />
 
     <meta name="theme-color" content="#dc2626">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Public Tak">
 
     <link rel="manifest" href="/manifest.json">
-    <link rel="icon" type="image/png" href="/Fevicon.png">
-    <link rel="apple-touch-icon" href="/Fevicon.png">
-    <link rel="shortcut icon" href="/Fevicon.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+    <link rel="apple-touch-icon" href="/icon-192.png">
+    <link rel="shortcut icon" href="/icon-192.png">
 
     <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -51,6 +53,7 @@
             color: var(--text-primary);
             overscroll-behavior-y: none; 
             transition: background-color 0.3s ease, color 0.3s ease;
+            padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
         }
 
         .glass-card { 
@@ -72,7 +75,6 @@
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
 
-        /* Typography overrides for dark mode */
         .dark-mode .text-gray-800 { color: var(--text-primary); }
         .dark-mode .text-gray-600 { color: var(--text-secondary); }
         .dark-mode .bg-white { background-color: var(--bg-secondary); }
@@ -102,5 +104,21 @@
 <body>
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/service-worker.js')
+            .then(reg => {
+              console.log('SW registered:', reg);
+              // Handle periodic sync registration
+              if ('periodicSync' in reg) {
+                reg.periodicSync.register('get-latest-news', {
+                  minInterval: 24 * 60 * 60 * 1000 // 24 hours
+                });
+              }
+            });
+        });
+      }
+    </script>
 </body>
 </html>
