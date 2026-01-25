@@ -72,12 +72,13 @@ const AdminPage: React.FC<AdminPageProps> = ({ onBack, currentUser, onLogin, onL
                     <h2 className="text-3xl font-bold text-gray-800 mb-6">Dashboard</h2>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                         <AdminCard icon="feedback" title="User Feedback" description="View and manage messages from users." color="from-pink-500 to-rose-500" onClick={() => onNavigate(View.ViewFeedback)} badge={unreadFeedbackCount} />
+                        <AdminCard icon="category" title="Manage Categories" description="Add, edit or delete news categories." color="from-orange-400 to-amber-500" onClick={() => onNavigate(View.ManageCategories)} />
                         <AdminCard icon="article" title="Create Article" description="Write and publish a new news article." color="from-green-500 to-teal-500" onClick={() => onNavigate(View.CreatePost)} />
                         <AdminCard icon="group" title="Manage Users" description="View, edit, or remove user accounts." color="from-blue-500 to-indigo-500" onClick={() => onNavigate(View.ManageUsers)} />
                         <AdminCard icon="monetization_on" title="Manage Ads" description="Configure AdSense and AdMob." color="from-emerald-500 to-lime-500" onClick={() => onNavigate(View.ManageAds)} />
                         <AdminCard icon="analytics" title="View Analytics" description="Check website traffic and engagement." color="from-purple-500 to-pink-500" onClick={() => onNavigate(View.Analytics)}/>
                         <AdminCard icon="flag" title="Moderate Content" description="Review and manage reported content." color="from-red-500 to-orange-500" onClick={() => onNavigate(View.ModerateContent)} badge={reportCount} />
-                        <AdminCard icon="campaign" title="Send Notifications" description="Push alerts and updates to users." color="from-yellow-500 to-amber-500" onClick={() => onNavigate(View.Notifications)} badge={unreadNotificationsCount} />
+                        <AdminCard icon="campaign" title="Send Notifications" description="Push alerts and updates to all users." color="from-yellow-500 to-amber-500" onClick={() => onNavigate(View.SendGlobalNotification)} badge={unreadNotificationsCount} />
                         <AdminCard icon="settings_applications" title="Site Settings" description="Configure application-wide settings." color="from-gray-500 to-gray-600" onClick={() => onNavigate(View.SiteSettings)} />
                     </div>
                 </div>

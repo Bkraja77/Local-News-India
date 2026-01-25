@@ -79,7 +79,6 @@ const UserPage: React.FC<UserPageProps> = ({ onBack, currentUser, onLogout, onNa
                 await db.collection("users").doc(currentUser.uid).collection("drafts").doc(itemToDelete.id).delete();
             } else if (itemToDelete.type === 'video') {
                 await db.collection("videos").doc(itemToDelete.id).delete();
-                // Cleanup Storage
                 if (itemToDelete.thumbnailUrl?.includes('firebasestorage')) {
                     storage.refFromURL(itemToDelete.thumbnailUrl).delete().catch(() => {});
                 }
@@ -102,29 +101,22 @@ const UserPage: React.FC<UserPageProps> = ({ onBack, currentUser, onLogout, onNa
         }
     };
 
-    const handleShareProfile = async () => {
+    const handleShareProfile = () => {
         if (!currentUser) return;
         const shareUrl = `${window.location.origin}/?userId=${currentUser.uid}`;
-        const shareText = `🚩 Check out the official profile of ${currentUser.name} on Public Tak News App! \n\nStay updated with my local news and reports here:\n\n${shareUrl}`;
         
-        if (navigator.share) {
-            try {
-                await navigator.share({
-                    title: `${currentUser.name} - Public Tak`,
-                    text: shareText,
-                    url: shareUrl,
-                });
-            } catch (err) { console.debug("Profile share cancelled"); }
-        } else {
-            window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank');
-        }
+        // Highly Attractive WhatsApp Message Logic
+        const shareText = `🚩 *Public Tak News Update!* 🚩\n\nनमस्ते! मैं *${currentUser.name}*, पब्लिक तक पर अब अपनी खबरें पोस्ट कर रहा हूँ।\n\nमेरे प्रखंड और जिला की हर छोटी-बड़ी खबर और लेटेस्ट वीडियो अपडेट्स पाने के लिए मुझे *Public Tak App* पर अभी *Follow* करें।\n\n👉 *मेरा प्रोफाइल यहाँ देखें:* \n${shareUrl}\n\n*"आपकी खबर, आपकी पहचान"* - अभी जुड़ें और अपनी आवाज़ बुलंद करें! 📲`;
+        
+        const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
+        window.open(whatsappUrl, '_blank');
+        showToast("Opening WhatsApp...", "info");
     };
 
     if (!currentUser) return <div className="p-10 text-center">Please login</div>;
 
     return (
         <div className="flex flex-col h-full bg-white">
-            {/* Red Header Bar */}
             <Header 
                 title="myProfile" 
                 showBackButton 
@@ -135,12 +127,8 @@ const UserPage: React.FC<UserPageProps> = ({ onBack, currentUser, onLogout, onNa
             
             <main className="flex-grow overflow-y-auto pb-24 md:pb-0 scrollbar-hide">
                 <div className="max-w-4xl mx-auto w-full">
-                    
-                    {/* Cover Photo Section */}
                     <div className="relative mb-24">
                         <div className="h-44 md:h-64 bg-gradient-to-br from-blue-500 to-indigo-900 shadow-inner"></div>
-                        
-                        {/* Overlapping Profile Photo */}
                         <div className="absolute left-1/2 -translate-x-1/2 bottom-0 translate-y-1/2 flex flex-col items-center">
                             <div className="relative">
                                 <img 
@@ -158,7 +146,6 @@ const UserPage: React.FC<UserPageProps> = ({ onBack, currentUser, onLogout, onNa
                         </div>
                     </div>
 
-                    {/* Name & Handle */}
                     <div className="text-center px-6 mt-4">
                         <h1 className="text-2xl md:text-3xl font-black text-gray-900 uppercase tracking-tight mb-0.5">
                             {currentUser.name}
@@ -171,7 +158,6 @@ const UserPage: React.FC<UserPageProps> = ({ onBack, currentUser, onLogout, onNa
                         )}
                     </div>
 
-                    {/* Unified Horizontal Stats Card */}
                     <div className="px-6 mt-10">
                         <div className="flex bg-white border border-gray-100 shadow-sm rounded-2xl overflow-hidden divide-x divide-gray-100">
                             <StatBox value={posts.length} label="POST" />
@@ -181,14 +167,13 @@ const UserPage: React.FC<UserPageProps> = ({ onBack, currentUser, onLogout, onNa
                         </div>
                     </div>
 
-                    {/* Action Buttons Group */}
                     <div className="px-6 mt-8 grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <button 
                             onClick={handleShareProfile}
-                            className="flex items-center justify-center gap-2 py-4 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-2xl border border-emerald-100 shadow-sm transition-all active:scale-[0.97]"
+                            className="flex items-center justify-center gap-2 py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl shadow-lg shadow-emerald-100 transition-all active:scale-[0.97]"
                         >
-                            <i className="fa-brands fa-whatsapp text-xl"></i>
-                            <span className="font-bold text-lg">Share</span>
+                            <i className="fa-brands fa-whatsapp text-2xl"></i>
+                            <span className="font-bold text-lg">WhatsApp Share</span>
                         </button>
 
                         <button 
@@ -208,7 +193,6 @@ const UserPage: React.FC<UserPageProps> = ({ onBack, currentUser, onLogout, onNa
                         )}
                     </div>
 
-                    {/* Content Section */}
                     <div className="mt-14 px-4">
                         <div className="flex p-1 bg-gray-100 rounded-2xl mb-8 w-fit mx-auto md:mx-0">
                             {['posts', 'videos', 'drafts'].map(tab => (
@@ -222,7 +206,6 @@ const UserPage: React.FC<UserPageProps> = ({ onBack, currentUser, onLogout, onNa
                             ))}
                         </div>
 
-                        {/* Content Grid */}
                         <div className={`${activeTab === 'videos' ? 'grid grid-cols-3 gap-1 md:gap-4' : 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6'}`}>
                             {activeTab === 'posts' && posts.map(post => (
                                 <div key={post.id} className="glass-card overflow-hidden h-full flex flex-col group border border-gray-100/50 hover:shadow-xl transition-all">
@@ -241,14 +224,10 @@ const UserPage: React.FC<UserPageProps> = ({ onBack, currentUser, onLogout, onNa
                                 <div key={video.id} className="relative aspect-[9/16] bg-black group overflow-hidden cursor-pointer rounded-lg md:rounded-xl shadow-sm" onClick={() => onNavigate(View.Videos, { videoId: video.id })}>
                                     <img src={video.thumbnailUrl} className="h-full w-full object-cover opacity-80 group-hover:scale-110 transition-transform duration-700" alt={video.title} />
                                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent"></div>
-                                    
-                                    {/* View Count Overlay */}
                                     <div className="absolute bottom-2 left-2 flex items-center gap-1 text-white text-[10px] font-black drop-shadow-md">
                                         <span className="material-symbols-outlined text-sm font-black">play_arrow</span>
                                         {formatCount(video.viewCount)}
                                     </div>
-
-                                    {/* Action Group */}
                                     <div className="absolute top-1.5 right-1.5 flex flex-col gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                                         <button 
                                             onClick={(e) => { 
@@ -300,7 +279,6 @@ const UserPage: React.FC<UserPageProps> = ({ onBack, currentUser, onLogout, onNa
                                 </div>
                             ))}
 
-                            {/* Empty States */}
                             {((activeTab === 'posts' && posts.length === 0) || 
                               (activeTab === 'videos' && videos.length === 0) || 
                               (activeTab === 'drafts' && drafts.length === 0)) && (

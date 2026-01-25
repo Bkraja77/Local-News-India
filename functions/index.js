@@ -1,4 +1,3 @@
-
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const fs = require("fs");
@@ -8,8 +7,8 @@ if (admin.apps.length === 0) {
   admin.initializeApp();
 }
 
-const defaultTitle = "Public Tak - Local News & Live Updates";
-const defaultDescription = "Stay connected with your community. Get real-time local news updates from Public Tak.";
+const defaultTitle = "Public Tak App - Latest Local News Article And Videos | India (Daily Updates)";
+const defaultDescription = "पब्लिक तक (Public Tak) - आपके क्षेत्र की हर छोटी-बड़ी खबर! Watch latest local news videos, read hyper-local articles, and get instant daily updates from across India.";
 const defaultImage = "https://www.publictak.app/icon-512.png";
 const siteDomain = "https://www.publictak.app";
 
@@ -63,7 +62,7 @@ exports.app = functions.https.onRequest(async (req, res) => {
       const postDoc = await admin.firestore().collection("posts").doc(postId).get();
       if (postDoc.exists) {
         const postData = postDoc.data();
-        title = postData.title || defaultTitle;
+        title = `${postData.title || 'News'} | Public Tak`;
         const plainText = postData.content ? postData.content.replace(/<[^>]*>?/gm, "").replace(/\s+/g, ' ').trim() : "";
         description = plainText.length > 5 ? plainText.substring(0, 160) + "..." : defaultDescription;
         image = postData.thumbnailUrl || defaultImage;
@@ -74,7 +73,7 @@ exports.app = functions.https.onRequest(async (req, res) => {
       const videoDoc = await admin.firestore().collection("videos").doc(videoId).get();
       if (videoDoc.exists) {
         const videoData = videoDoc.data();
-        title = videoData.title || defaultTitle;
+        title = `${videoData.title || 'Video News'} | Public Tak`;
         description = videoData.description || `Watch this latest news video on Public Tak.`;
         image = videoData.thumbnailUrl || defaultImage;
         pageUrl = `${siteDomain}/?videoId=${videoId}`;
@@ -85,7 +84,7 @@ exports.app = functions.https.onRequest(async (req, res) => {
       if (userDoc.exists) {
         const userData = userDoc.data();
         title = `${userData.name || 'User'} - Public Tak`;
-        description = userData.bio || `View profile and news from ${userData.name}.`;
+        description = userData.bio || `View profile and news from ${userData.name} on Public Tak.`;
         image = userData.profilePicUrl || defaultImage;
         pageUrl = `${siteDomain}/?userId=${userId}`;
         pageType = "profile";
@@ -97,7 +96,7 @@ exports.app = functions.https.onRequest(async (req, res) => {
         image = `${siteDomain}${image.startsWith('/') ? '' : '/'}${image}`;
     }
 
-    // 6. Generate Meta Tags (CRITICAL: 'og:image' needs explicit dimensions for first scrape)
+    // 6. Generate Meta Tags
     const metaTags = `
     <!-- Primary Meta Tags -->
     <title>${escapeText(title)}</title>
@@ -129,8 +128,8 @@ exports.app = functions.https.onRequest(async (req, res) => {
     let finalHtml = html
       .replace(/<title>.*?<\/title>/gi, '')
       .replace(/<meta\s+name=["']description["'][^>]*>/gi, '')
-      .replace(/<meta\s+property=["']og:.*?["'][^>]*>/gi, '') // Remove existing OG tags
-      .replace(/<meta\s+name=["']twitter:.*?["'][^>]*>/gi, '') // Remove existing Twitter tags
+      .replace(/<meta\s+property=["']og:.*?["'][^>]*>/gi, '')
+      .replace(/<meta\s+name=["']twitter:.*?["'][^>]*>/gi, '')
       .replace(/<link\s+rel=["']canonical["'][^>]*>/gi, '')
       .replace("<head>", `<head>${metaTags}`);
 

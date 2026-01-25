@@ -31,6 +31,8 @@ import ChangePasswordPage from './components/ChangePasswordPage';
 import ManageAdsPage from './components/ManageAdsPage';
 import ViewFeedbackPage from './components/ViewFeedbackPage';
 import PostDetailPage from './components/PostDetailPage';
+import ManageCategoriesPage from './components/ManageCategoriesPage';
+import SendNotificationPage from './components/SendNotificationPage';
 import { LanguageProvider } from './contexts/LanguageContext';
 import { ToastProvider, useToast } from './contexts/ToastContext';
 import Sidebar from './components/Sidebar';
@@ -60,7 +62,26 @@ const AppContent: React.FC = () => {
     if (savedTheme === 'dark') document.body.classList.add('dark-mode');
   }, []);
 
-  // --- Push Notification Registration ---
+  // GLOBAL BROADCAST LISTENER
+  useEffect(() => {
+    const unsubGlobal = db.collection('global_notifications')
+        .orderBy('createdAt', 'desc')
+        .limit(1)
+        .onSnapshot(snap => {
+            if (!snap.empty) {
+                const doc = snap.docs[0];
+                const data = doc.data();
+                const lastSeenId = localStorage.getItem('last_seen_broadcast_id');
+                
+                if (lastSeenId !== doc.id) {
+                    showToast(data.title || "New Alert from Admin", "info");
+                    localStorage.setItem('last_seen_broadcast_id', doc.id);
+                }
+            }
+        });
+    return () => unsubGlobal();
+  }, [showToast]);
+
   useEffect(() => {
     if (!currentUser || !messaging) return;
 
@@ -226,11 +247,13 @@ const AppContent: React.FC = () => {
                 <PageWrapper view={View.Analytics}><AnalyticsPage onBack={() => window.history.back()} currentUser={currentUser} /></PageWrapper>
                 <PageWrapper view={View.ModerateContent}><ModerateContentPage onBack={() => window.history.back()} currentUser={currentUser} /></PageWrapper>
                 <PageWrapper view={View.ViewFeedback}><ViewFeedbackPage onBack={() => window.history.back()} currentUser={currentUser} /></PageWrapper>
-                <PageWrapper view={View.SiteSettings}><SiteSettingsPage onBack={() => window.history.back()} /></PageWrapper>
+                <PageWrapper view={View.SiteSettings}><SiteSettingsPage onBack={() => window.history.back()} currentUser={currentUser} /></PageWrapper>
                 <PageWrapper view={View.ManageAccount}><ManageAccountPage onBack={() => window.history.back()} onNavigate={navigateTo} currentUser={currentUser} /></PageWrapper>
                 <PageWrapper view={View.ChangePassword}><ChangePasswordPage onBack={() => window.history.back()} /></PageWrapper>
                 <PageWrapper view={View.EditProfile}>{currentUser && <EditProfilePage onBack={() => window.history.back()} currentUser={currentUser} onProfileUpdate={(data) => setCurrentUser(prev => prev ? {...prev, ...data} : null)} />}</PageWrapper>
                 <PageWrapper view={View.EditPost}>{selectedPostId && currentUser && <EditPostPage postId={selectedPostId} currentUser={currentUser} onBack={() => window.history.back()} />}</PageWrapper>
+                <PageWrapper view={View.ManageCategories}><ManageCategoriesPage onBack={() => window.history.back()} currentUser={currentUser} /></PageWrapper>
+                <PageWrapper view={View.SendGlobalNotification}><SendNotificationPage onBack={() => window.history.back()} currentUser={currentUser} /></PageWrapper>
             </div>
             <BottomNavBar onNavigate={navigateTo} currentUser={currentUser} currentView={currentView} unreadCount={unreadNotificationsCount} />
         </div>

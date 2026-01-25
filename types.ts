@@ -28,6 +28,8 @@ export enum View {
   ChangePassword = 'changePassword',
   ManageAds = 'manageAds',
   ViewFeedback = 'viewFeedback',
+  ManageCategories = 'manageCategories',
+  SendGlobalNotification = 'sendGlobalNotification',
 }
 
 export interface User {
@@ -110,7 +112,6 @@ export interface Comment {
   authorReplyCreatedAt?: Date;
 }
 
-// Added Reply interface to resolve 'Cannot find name Reply' error in components
 export interface Reply {
   id: string;
   content: string;
@@ -122,7 +123,7 @@ export interface Reply {
 
 export interface Notification {
   id: string;
-  type: 'new_follower' | 'new_like' | 'new_comment' | 'new_post' | 'new_video' | 'new_share';
+  type: 'new_follower' | 'new_like' | 'new_comment' | 'new_post' | 'new_video' | 'new_share' | 'global_broadcast';
   fromUserId: string;
   fromUserName: string;
   fromUserProfilePicUrl: string;
@@ -131,6 +132,7 @@ export interface Notification {
   postId?: string;
   videoId?: string;
   postTitle?: string;
+  message?: string;
 }
 
 export interface AdConfig {

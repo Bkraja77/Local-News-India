@@ -1,4 +1,3 @@
-
 import React, { useEffect } from 'react';
 import { APP_LOGO_URL } from '../utils/constants';
 
@@ -24,15 +23,23 @@ const SEO: React.FC<SEOProps> = ({
   keywords
 }) => {
   useEffect(() => {
-    const siteTitle = 'Public Tak';
-    const cleanTitle = title.replace(/<[^>]*>?/gm, '').trim();
-    const displayTitle = cleanTitle === siteTitle || cleanTitle === 'Home' || !cleanTitle 
-      ? siteTitle 
-      : `${cleanTitle} | ${siteTitle}`;
+    const siteBrand = 'Public Tak';
+    const seoTitle = 'Public Tak App - Latest Local News Article And Videos | India (Daily Updates)';
+    
+    const cleanTitle = title ? title.replace(/<[^>]*>?/gm, '').trim() : '';
+    
+    // If it's the default/home title, use the full SEO optimized version
+    const displayTitle = (cleanTitle === siteBrand || cleanTitle === 'Home' || !cleanTitle) 
+      ? seoTitle 
+      : `${cleanTitle} | ${siteBrand}`;
     
     document.title = displayTitle;
 
-    const cleanDescription = description.replace(/<[^>]*>?/gm, '').substring(0, 160).trim();
+    // Use specific description if provided, otherwise a high-impact unique one
+    const defaultFullDesc = "पब्लिक तक (Public Tak) - आपके क्षेत्र की हर छोटी-बड़ी खबर! Watch latest local news videos, read hyper-local articles, and get instant daily updates from across India. Join the community of local reporters today!";
+    const cleanDescription = (description && description.length > 20) 
+      ? description.replace(/<[^>]*>?/gm, '').substring(0, 160).trim() 
+      : defaultFullDesc;
     
     // Ensure absolute image URL
     let absoluteImage = image;
@@ -56,14 +63,14 @@ const SEO: React.FC<SEOProps> = ({
     
     setMetaTag('property', 'og:type', type);
     setMetaTag('property', 'og:url', url);
-    setMetaTag('property', 'og:title', cleanTitle || siteTitle);
+    setMetaTag('property', 'og:title', cleanTitle || siteBrand);
     setMetaTag('property', 'og:description', cleanDescription);
     setMetaTag('property', 'og:image', absoluteImage);
     setMetaTag('property', 'og:image:secure_url', absoluteImage);
-    setMetaTag('property', 'og:site_name', siteTitle);
+    setMetaTag('property', 'og:site_name', siteBrand);
     
     setMetaTag('name', 'twitter:card', 'summary_large_image');
-    setMetaTag('name', 'twitter:title', cleanTitle || siteTitle);
+    setMetaTag('name', 'twitter:title', cleanTitle || siteBrand);
     setMetaTag('name', 'twitter:description', cleanDescription);
     setMetaTag('name', 'twitter:image', absoluteImage);
 

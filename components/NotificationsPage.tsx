@@ -120,7 +120,7 @@ const SwipeableNotificationItem: React.FC<SwipeableItemProps> = ({
             >
                 <div className="relative flex-shrink-0">
                     <img 
-                        src={notification.fromUserProfilePicUrl || `https://api.dicebear.com/8.x/initials/svg?seed=${notification.fromUserName}`} 
+                        src={notification.fromUserProfilePicUrl || `https://api.dicebear.com/8.x/initials/svg?seed=${notification.fromUserName || notification.id}`} 
                         alt={notification.fromUserName}
                         className="w-12 h-12 rounded-full object-cover border border-gray-200 shadow-sm pointer-events-none"
                     />
@@ -131,7 +131,11 @@ const SwipeableNotificationItem: React.FC<SwipeableItemProps> = ({
                 
                 <div className="flex-1 min-w-0 pointer-events-none">
                     <p className="text-base text-gray-800 leading-snug pr-2">
-                        <span className="font-bold">{notification.fromUserName}</span> {getNotificationText(notification)}
+                        {notification.type === 'global_broadcast' ? (
+                            <><span className="font-bold text-red-600">OFFICIAL:</span> {notification.message}</>
+                        ) : (
+                            <><span className="font-bold">{notification.fromUserName}</span> {getNotificationText(notification)}</>
+                        )}
                     </p>
                     <p className="text-xs text-gray-500 mt-1.5 flex items-center gap-1">
                         <span className="material-symbols-outlined text-[14px]">schedule</span>
@@ -143,14 +147,6 @@ const SwipeableNotificationItem: React.FC<SwipeableItemProps> = ({
                     {!notification.read && (
                         <div className="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-sm animate-pulse"></div>
                     )}
-                    
-                    <button 
-                        onClick={handleDeleteClick}
-                        className="hidden md:block p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
-                        title="Delete Notification"
-                    >
-                        <span className="material-symbols-outlined text-lg">delete</span>
-                    </button>
                 </div>
             </div>
         </div>
@@ -173,29 +169,45 @@ const NotificationsPage: React.FC<NotificationsPageProps> = ({ onBack, currentUs
       return;
     }
 
-    const unsubscribe = db.collection('users')
+    const unsubPersonal = db.collection('users')
       .doc(currentUser.uid)
       .collection('notifications')
       .orderBy('createdAt', 'desc')
-      .limit(50)
-      .onSnapshot(snapshot => {
-        const fetchedNotifications = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          createdAt: doc.data().createdAt?.toDate() || new Date(),
-        } as Notification));
-        setNotifications(fetchedNotifications);
-        setLoading(false);
-      }, error => {
-        console.error("Error fetching notifications:", error);
-        setLoading(false);
-      });
+      .limit(30);
 
-    return () => unsubscribe();
+    const unsubGlobal = db.collection('global_notifications')
+      .orderBy('createdAt', 'desc')
+      .limit(10);
+
+    const unsubscribePersonal = unsubPersonal.onSnapshot(pSnap => {
+        const personal = pSnap.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            createdAt: doc.data().createdAt?.toDate() || new Date(),
+        } as Notification));
+
+        unsubGlobal.get().then(gSnap => {
+            const global = gSnap.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data(),
+                type: 'global_broadcast',
+                fromUserName: 'Public Tak Team',
+                read: true, // Broadcasts are usually informational
+                createdAt: doc.data().createdAt?.toDate() || new Date(),
+            } as Notification));
+
+            const combined = [...personal, ...global].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+            setNotifications(combined);
+            setLoading(false);
+        });
+    });
+
+    return () => unsubscribePersonal();
   }, [currentUser]);
 
   const handleNotificationClick = async (notification: Notification) => {
     if (!currentUser) return;
+    if (notification.type === 'global_broadcast') return;
 
     if (!notification.read) {
       try {
@@ -226,7 +238,7 @@ const NotificationsPage: React.FC<NotificationsPageProps> = ({ onBack, currentUs
             .delete();
         showToast("Notification removed", "success");
     } catch (error) {
-        console.error("Error deleting notification:", error);
+        // Might be a global notification (can't delete globally from here)
     }
   };
 
@@ -236,11 +248,13 @@ const NotificationsPage: React.FC<NotificationsPageProps> = ({ onBack, currentUs
       try {
           const batch = db.batch();
           notifications.forEach(notif => {
-              const ref = db.collection('users').doc(currentUser.uid).collection('notifications').doc(notif.id);
-              batch.delete(ref);
+              if (notif.type !== 'global_broadcast') {
+                const ref = db.collection('users').doc(currentUser.uid).collection('notifications').doc(notif.id);
+                batch.delete(ref);
+              }
           });
           await batch.commit();
-          showToast("All notifications cleared", "success");
+          showToast("Personal notifications cleared", "success");
       } catch (error) {
           showToast("Failed to clear notifications", "error");
       } finally {
@@ -292,6 +306,7 @@ const NotificationsPage: React.FC<NotificationsPageProps> = ({ onBack, currentUs
       case 'new_follower': return 'person_add';
       case 'new_post': return 'article';
       case 'new_video': return 'movie';
+      case 'global_broadcast': return 'campaign';
       default: return 'notifications';
     }
   };
@@ -304,6 +319,7 @@ const NotificationsPage: React.FC<NotificationsPageProps> = ({ onBack, currentUs
       case 'new_follower': return 'text-purple-500 bg-purple-50';
       case 'new_post': return 'text-indigo-500 bg-indigo-50';
       case 'new_video': return 'text-orange-500 bg-orange-50';
+      case 'global_broadcast': return 'text-white bg-red-600 animate-pulse';
       default: return 'text-gray-500 bg-gray-50';
     }
   };
@@ -336,7 +352,7 @@ const NotificationsPage: React.FC<NotificationsPageProps> = ({ onBack, currentUs
                         className="text-xs font-bold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-full transition-colors flex items-center gap-1"
                     >
                         <span className="material-symbols-outlined text-sm">delete_sweep</span>
-                        Clear All
+                        Clear Personal
                     </button>
                 </div>
 
@@ -366,8 +382,8 @@ const NotificationsPage: React.FC<NotificationsPageProps> = ({ onBack, currentUs
         onClose={() => setIsClearModalOpen(false)}
         onConfirm={handleClearAll}
         title="Clear Notifications"
-        message="Are you sure you want to delete all notifications? This action cannot be undone."
-        confirmButtonText={isDeleting ? "Clearing..." : "Clear All"}
+        message="Are you sure you want to delete your personal notifications? Broadcasts will remain."
+        confirmButtonText={isDeleting ? "Clearing..." : "Clear"}
         confirmButtonColor="bg-red-600 hover:bg-red-700"
       />
     </div>

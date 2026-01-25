@@ -2,7 +2,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Header from './Header';
 import { db, serverTimestamp, increment, firebase, storage } from '../firebaseConfig';
-// Added Reply to the imported types to fix name lookup errors
 import { VideoPost, User, View, Comment, Reply } from '../types';
 import { formatCount } from '../utils/formatters';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -17,9 +16,10 @@ import ConfirmationModal from './ConfirmationModal';
 const timeAgo = (date: Date | null | undefined) => {
     if (!date) return 'Just now';
     const now = new Date();
-    const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-    if (seconds < 60) return 'Just now';
-    const minutes = Math.floor(seconds / 60);
+    const seconds = Math.floor((now.getTime() || 0) / 1000) - Math.floor((date.getTime() || 0) / 1000);
+    const absSeconds = Math.abs(seconds);
+    if (absSeconds < 60) return 'Just now';
+    const minutes = Math.floor(absSeconds / 60);
     if (minutes < 60) return `${minutes}m`;
     const hours = Math.floor(minutes / 60);
     if (hours < 24) return `${hours}h`;
@@ -38,7 +38,6 @@ interface VideosPageProps {
 const newsCategories = ['Recent News', 'Politics', 'Crime', 'Sports', 'Entertainment', 'Business', 'Technology', 'Health', 'World', 'General'];
 
 const VideoReplyItem: React.FC<{ 
-    // Reply type is now imported from ../types
     reply: Reply; 
     videoId: string; 
     commentId: string; 
@@ -138,7 +137,6 @@ const VideoCommentItem: React.FC<{
     const [isEditing, setIsEditing] = useState(false);
     const [editText, setEditText] = useState('');
     const [showMenu, setShowMenu] = useState(false);
-    // Reply type is now imported from ../types
     const [replies, setReplies] = useState<Reply[]>([]);
 
     useEffect(() => {
@@ -147,7 +145,6 @@ const VideoCommentItem: React.FC<{
             if (currentUser) setIsLiked(snap.docs.some(doc => doc.id === currentUser.uid));
         });
         const unsubReplies = db.collection('videos').doc(videoId).collection('comments').doc(comment.id).collection('replies').orderBy('createdAt', 'asc').onSnapshot(snap => {
-            // Mapping to imported Reply type
             setReplies(snap.docs.map(doc => ({ id: doc.id, ...doc.data(), createdAt: doc.data().createdAt?.toDate() || new Date() } as Reply)));
         });
         return () => { unsubLikes(); unsubReplies(); };
@@ -391,8 +388,17 @@ const VideosPage: React.FC<VideosPageProps> = ({ onNavigate, currentUser, onLogi
     const displayCategories: CategoryItem[] = useMemo(() => {
         const items: CategoryItem[] = [];
         items.push({ id: NEAR_ME, label: t('nearMe') || 'Near Me', icon: 'my_location' });
+        
         newsCategories.forEach(cat => {
-            items.push({ id: cat, label: t(cat.toLowerCase()), icon: cat === 'Recent News' ? 'local_fire_department' : undefined });
+            const lowerKey = cat.toLowerCase();
+            const translated = t(lowerKey);
+            const finalLabel = translated === lowerKey ? cat : translated;
+            
+            items.push({ 
+                id: cat, 
+                label: finalLabel, 
+                icon: cat === 'Recent News' ? 'local_fire_department' : undefined 
+            });
         });
         return items;
     }, [t]);
@@ -577,13 +583,24 @@ const ReelItem: React.FC<ReelItemProps> = ({ video, isActive, currentUser, onLog
     const [isPlaying, setIsPlaying] = useState(false);
     const [showComments, setShowComments] = useState(false);
     const [showActionSheet, setShowActionSheet] = useState(false);
+    const [showQuickEdit, setShowQuickEdit] = useState(false);
+    const [showReportModal, setShowReportModal] = useState(false);
+    const [reportReason, setReportReason] = useState('');
+    const [editTitle, setEditTitle] = useState(video.title);
+    const [editDescription, setEditDescription] = useState(video.description || '');
+    const [isSavingChanges, setIsSavingChanges] = useState(false);
+    const [isSubmittingReport, setIsSubmittingReport] = useState(false);
     const [likeCount, setLikeCount] = useState(0);
     const [commentCount, setCommentCount] = useState(0);
     const [isLiked, setIsLiked] = useState(false);
     const [progress, setProgress] = useState(0);
     const [isExpanded, setIsExpanded] = useState(false);
     const [isSeeking, setIsSeeking] = useState(false);
+    const [showHeartAnim, setShowHeartAnim] = useState(false);
+    const lastTapRef = useRef<number>(0);
+    
     const isAuthor = currentUser?.uid === video.authorId;
+    const { showToast } = useToast();
 
     useEffect(() => {
         if (videoRef.current) {
@@ -597,6 +614,8 @@ const ReelItem: React.FC<ReelItemProps> = ({ video, isActive, currentUser, onLog
                 setIsPlaying(false); 
                 setShowComments(false); 
                 setShowActionSheet(false);
+                setShowQuickEdit(false);
+                setShowReportModal(false);
             }
         }
     }, [isActive, video.id]);
@@ -616,16 +635,17 @@ const ReelItem: React.FC<ReelItemProps> = ({ video, isActive, currentUser, onLog
         const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
         const pos = (clientX - rect.left) / rect.width;
         const clampedPos = Math.max(0, Math.min(1, pos));
-        videoRef.current.currentTime = clampedPos * videoRef.current.duration;
+        videoRef.current.currentTime = clampedPos * (videoRef.current.duration || 0);
         setProgress(clampedPos * 100);
     };
 
-    const handleLike = async (e: React.MouseEvent) => {
-        e.stopPropagation();
+    const handleLike = async (e?: React.MouseEvent) => {
+        e?.stopPropagation();
         if (!currentUser) { onLogin(); return; }
         const ref = db.collection('videos').doc(video.id).collection('likes').doc(currentUser.uid);
-        if (isLiked) await ref.delete();
-        else {
+        if (isLiked && e) { // Only toggle off if manually clicked (not double tap)
+            await ref.delete();
+        } else if (!isLiked) {
             const batch = db.batch();
             batch.set(ref, { createdAt: serverTimestamp() });
             if (currentUser.uid !== video.authorId) {
@@ -637,11 +657,76 @@ const ReelItem: React.FC<ReelItemProps> = ({ video, isActive, currentUser, onLog
         }
     };
 
+    const handleTapInteraction = (e: React.MouseEvent | React.TouchEvent) => {
+        const now = Date.now();
+        const DOUBLE_TAP_DELAY = 300;
+        
+        if (now - lastTapRef.current < DOUBLE_TAP_DELAY) {
+            // Double Tap Detected
+            handleLike();
+            setShowHeartAnim(true);
+            setTimeout(() => setShowHeartAnim(false), 800);
+        } else {
+            // Single Tap: Play/Pause
+            if (isPlaying) videoRef.current?.pause(); else videoRef.current?.play(); 
+            setIsPlaying(!isPlaying);
+        }
+        lastTapRef.current = now;
+    };
+
+    const handleSaveChanges = async () => {
+        if (!editTitle.trim()) {
+            showToast("Title is required", "error");
+            return;
+        }
+        setIsSavingChanges(true);
+        try {
+            await db.collection('videos').doc(video.id).update({
+                title: editTitle.trim(),
+                description: editDescription.trim(),
+                updatedAt: serverTimestamp()
+            });
+            showToast("Changes saved!", "success");
+            setShowQuickEdit(false);
+        } catch (error) {
+            showToast("Failed to save", "error");
+        } finally {
+            setIsSavingChanges(false);
+        }
+    };
+
+    const handleSubmitReport = async () => {
+        if (!currentUser) { onLogin(); return; }
+        if (!reportReason.trim()) {
+            showToast("Please provide a reason", "error");
+            return;
+        }
+        setIsSubmittingReport(true);
+        try {
+            await db.collection('reports').add({
+                contentType: 'video',
+                videoId: video.id,
+                videoTitle: video.title,
+                reporterId: currentUser.uid,
+                reporterName: currentUser.name,
+                reason: reportReason.trim(),
+                createdAt: serverTimestamp()
+            });
+            showToast("Report submitted. Thank you.", "success");
+            setShowReportModal(false);
+            setReportReason('');
+        } catch (error) {
+            showToast("Failed to report", "error");
+        } finally {
+            setIsSubmittingReport(false);
+        }
+    };
+
     return (
-        <div className="h-full w-full snap-start snap-always relative flex flex-col items-center bg-black transition-all duration-500 overflow-hidden">
+        <div className="h-full w-full snap-start snap-always relative flex flex-col items-center bg-black transition-all duration-500 overflow-hidden select-none">
             <div 
                 className={`relative w-full transition-all duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${showComments ? 'h-[35vh] md:h-[45vh]' : 'h-full'}`}
-                onClick={() => { if (isPlaying) videoRef.current?.pause(); else videoRef.current?.play(); setIsPlaying(!isPlaying); }}
+                onClick={handleTapInteraction}
             >
                 <video 
                     ref={videoRef} 
@@ -649,43 +734,93 @@ const ReelItem: React.FC<ReelItemProps> = ({ video, isActive, currentUser, onLog
                     className="h-full w-full object-contain bg-black" 
                     loop 
                     playsInline 
-                    onTimeUpdate={() => { if (!isSeeking && videoRef.current) setProgress((videoRef.current.currentTime / videoRef.current.duration) * 100); }} 
+                    onTimeUpdate={() => { if (!isSeeking && videoRef.current) setProgress((videoRef.current.currentTime / (videoRef.current.duration || 1)) * 100); }} 
                 />
+
+                {/* Double Tap Heart Animation */}
+                {showHeartAnim && (
+                    <div className="absolute inset-0 flex items-center justify-center z-[200] pointer-events-none">
+                        <div className="animate-in fade-in zoom-in-50 duration-300">
+                             <span className="material-symbols-outlined text-[100px] text-red-500 drop-shadow-[0_0_20px_rgba(239,68,68,0.8)] fill-current animate-bounce">favorite</span>
+                        </div>
+                    </div>
+                )}
                 
+                {/* Floating Action Buttons (PNG-Style) */}
                 {!showComments && (
-                    <div className="absolute right-3 bottom-[calc(52px+6rem+env(safe-area-inset-bottom))] flex flex-col items-center gap-5 z-20 animate-in fade-in slide-in-from-right-4">
+                    <div className="absolute right-3 bottom-[calc(52px+6rem+env(safe-area-inset-bottom))] flex flex-col items-center gap-6 z-20 animate-in fade-in slide-in-from-right-4">
                         <div className="flex flex-col items-center gap-1">
-                            <button onClick={handleLike} className={`w-12 h-12 flex items-center justify-center bg-black/20 backdrop-blur-md rounded-full border border-white/10 ${isLiked ? 'text-red-500' : 'text-white'}`}><span className="material-symbols-outlined text-[32px] drop-shadow-lg" style={{ fontVariationSettings: `'FILL' ${isLiked ? 1 : 0}` }}>favorite</span></button>
-                            <span className="text-white text-[10px] font-black drop-shadow-md">{formatCount(likeCount)}</span>
+                            <button 
+                                onClick={handleLike} 
+                                className={`flex items-center justify-center transition-transform active:scale-75 ${isLiked ? 'text-red-500' : 'text-white'}`}
+                            >
+                                <span 
+                                    className="material-symbols-outlined text-[42px]" 
+                                    style={{ 
+                                        fontVariationSettings: `'FILL' ${isLiked ? 1 : 0}`,
+                                        filter: 'drop-shadow(0px 2px 4px rgba(0,0,0,0.5))'
+                                    }}
+                                >
+                                    favorite
+                                </span>
+                            </button>
+                            <span className="text-white text-xs font-black drop-shadow-[0_1.2px_1.2px_rgba(0,0,0,0.8)]">{formatCount(likeCount)}</span>
                         </div>
                         <div className="flex flex-col items-center gap-1">
-                            <button onClick={(e) => { e.stopPropagation(); setShowComments(true); }} className="w-12 h-12 flex items-center justify-center bg-black/20 backdrop-blur-md rounded-full border border-white/10 text-white"><span className="material-symbols-outlined text-[32px] drop-shadow-lg">chat_bubble</span></button>
-                            <span className="text-white text-[10px] font-black drop-shadow-md">{formatCount(commentCount)}</span>
+                            <button onClick={(e) => { e.stopPropagation(); setShowComments(true); }} className="flex items-center justify-center text-white active:scale-75 transition-transform">
+                                <span className="material-symbols-outlined text-[42px]" style={{ filter: 'drop-shadow(0px 2px 4px rgba(0,0,0,0.5))' }}>chat_bubble</span>
+                            </button>
+                            <span className="text-white text-xs font-black drop-shadow-[0_1.2px_1.2px_rgba(0,0,0,0.8)]">{formatCount(commentCount)}</span>
                         </div>
-                        <button onClick={(e) => { e.stopPropagation(); window.open(`https://wa.me/?text=${encodeURIComponent('🚩 Watch this news: ' + window.location.origin + '/?videoId=' + video.id)}`, '_blank'); }} className="w-12 h-12 flex items-center justify-center bg-black/20 backdrop-blur-md rounded-full border border-white/10 text-white"><span className="material-symbols-outlined text-[30px] drop-shadow-lg">share</span></button>
+                        <div className="flex flex-col items-center gap-1">
+                            <button onClick={(e) => { e.stopPropagation(); window.open(`https://wa.me/?text=${encodeURIComponent('🚩 Watch this news: ' + window.location.origin + '/?videoId=' + video.id)}`, '_blank'); }} className="flex items-center justify-center text-white active:scale-75 transition-transform">
+                                <span className="material-symbols-outlined text-[40px]" style={{ filter: 'drop-shadow(0px 2px 4px rgba(0,0,0,0.5))' }}>share</span>
+                            </button>
+                            <span className="text-white text-[10px] font-black uppercase tracking-tighter drop-shadow-[0_1.2px_1.2px_rgba(0,0,0,0.8)]">Share</span>
+                        </div>
                         
-                        {isAuthor && (
-                            <button onClick={(e) => { e.stopPropagation(); setShowActionSheet(true); }} className="w-12 h-12 flex items-center justify-center bg-black/20 backdrop-blur-md rounded-full border border-white/10 text-white"><span className="material-symbols-outlined text-[30px] drop-shadow-lg">more_horiz</span></button>
-                        )}
+                        <button onClick={(e) => { e.stopPropagation(); setShowActionSheet(true); }} className="flex items-center justify-center text-white/80 hover:text-white active:scale-75 transition-all">
+                            <span className="material-symbols-outlined text-[36px]" style={{ filter: 'drop-shadow(0px 2px 4px rgba(0,0,0,0.5))' }}>more_horiz</span>
+                        </button>
                     </div>
                 )}
 
+                {/* Bottom Video Info */}
                 {!showComments && (
-                    <div className={`absolute bottom-0 left-0 w-full px-5 pt-20 pb-[calc(52px+2rem+env(safe-area-inset-bottom))] z-10 ${isExpanded ? 'bg-black/60' : 'bg-gradient-to-t from-black/90 to-transparent'}`}>
-                        <div className="flex items-center gap-3 mb-3">
-                            <img onClick={(e) => { e.stopPropagation(); onNavigate(View.PublicProfile, { userId: video.authorId }); }} src={video.authorProfilePicUrl} className="w-10 h-10 rounded-full border-2 border-white shadow-lg cursor-pointer" alt="" />
+                    <div className={`absolute bottom-0 left-0 w-full px-5 pt-28 pb-[calc(52px+2rem+env(safe-area-inset-bottom))] z-10 ${isExpanded ? 'bg-black/60' : 'bg-gradient-to-t from-black/90 via-black/20 to-transparent'}`}>
+                        <div className="flex items-center gap-3 mb-4">
+                            <img 
+                                onClick={(e) => { e.stopPropagation(); onNavigate(View.PublicProfile, { userId: video.authorId }); }} 
+                                src={video.authorProfilePicUrl} 
+                                className="w-11 h-11 rounded-full border-2 border-white shadow-xl cursor-pointer hover:scale-105 transition-transform" 
+                                alt="" 
+                            />
                             <div className="flex items-center gap-2">
-                                <p className="text-white font-black text-sm drop-shadow-md">@{video.authorName}</p>
-                                {!isFollowing && currentUser?.uid !== video.authorId && <button onClick={(e) => { e.stopPropagation(); handleFollowToggle(video.authorId, video.authorName, video.authorProfilePicUrl); }} className="px-3 py-1 bg-red-600 text-white text-[9px] font-black uppercase rounded shadow-lg">Follow</button>}
+                                <p className="text-white font-black text-base drop-shadow-md">@{video.authorName}</p>
+                                {!isFollowing && currentUser?.uid !== video.authorId && (
+                                    <button 
+                                        onClick={(e) => { e.stopPropagation(); handleFollowToggle(video.authorId, video.authorName, video.authorProfilePicUrl); }} 
+                                        className="ml-1 px-4 py-1.5 bg-white text-black text-[10px] font-black uppercase rounded-full shadow-lg hover:bg-red-600 hover:text-white transition-all active:scale-95"
+                                    >
+                                        Follow
+                                    </button>
+                                )}
                             </div>
                         </div>
-                        <div className="cursor-pointer" onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); }}>
-                            <h3 className={`text-white font-bold text-sm leading-tight drop-shadow-md transition-all ${isExpanded ? '' : 'line-clamp-1'}`}>{video.title}</h3>
-                            {isExpanded && video.description && <p className="text-white/80 text-xs mt-2 leading-relaxed animate-in fade-in duration-300">{video.description}</p>}
+                        <div className="cursor-pointer max-w-[85%]" onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); }}>
+                            <h3 className={`text-white font-bold text-sm leading-tight drop-shadow-md transition-all ${isExpanded ? '' : 'line-clamp-1'}`}>
+                                {video.title}
+                            </h3>
+                            {isExpanded && video.description && (
+                                <p className="text-white/90 text-xs mt-2.5 leading-relaxed animate-in fade-in duration-300 font-medium">
+                                    {video.description}
+                                </p>
+                            )}
                         </div>
                     </div>
                 )}
                 
+                {/* Scrub Bar */}
                 <div 
                     ref={progressRef}
                     className="absolute left-0 w-full h-8 z-[170] flex items-center cursor-pointer group"
@@ -698,46 +833,139 @@ const ReelItem: React.FC<ReelItemProps> = ({ video, isActive, currentUser, onLog
                     onTouchEnd={() => setIsSeeking(false)}
                     onClick={(e) => e.stopPropagation()}
                 >
-                    <div className="w-full h-1 bg-white/20 relative overflow-visible rounded-full mx-0">
-                        <div className="h-full bg-red-600 shadow-[0_0_12px_rgba(220,38,38,1)] transition-all duration-100 ease-out" style={{ width: `${progress}%` }}>
-                            <div className={`absolute top-1/2 right-0 -translate-y-1/2 w-3 h-3 bg-red-600 rounded-full border border-white shadow-xl transition-transform ${isSeeking ? 'scale-125' : 'scale-0 group-hover:scale-100'}`}></div>
+                    <div className="w-full h-[3px] bg-white/20 relative overflow-visible rounded-full mx-0">
+                        <div className="h-full bg-red-600 shadow-[0_0_15px_rgba(220,38,38,1)] transition-all duration-100 ease-out" style={{ width: `${progress}%` }}>
+                            <div className={`absolute top-1/2 right-0 -translate-y-1/2 w-4 h-4 bg-red-600 rounded-full border-2 border-white shadow-2xl transition-transform ${isSeeking ? 'scale-125' : 'scale-0 group-hover:scale-100'}`}></div>
                         </div>
                     </div>
                 </div>
             </div>
 
+            {/* Comment Area Modal */}
             {showComments && (
                 <div className="flex-1 w-full bg-white flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-500 rounded-t-[2.5rem] shadow-[0_-20px_50px_rgba(0,0,0,0.5)] z-[160] relative">
                     <CommentArea videoId={video.id} currentUser={currentUser} videoAuthorId={video.authorId} onClose={() => setShowComments(false)} onLogin={onLogin} />
                 </div>
             )}
 
-            {/* Author Action Sheet */}
+            {/* Action Sheet - Options */}
             {showActionSheet && (
-                <div className="fixed inset-0 z-[190] flex items-end justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-300" onClick={() => setShowActionSheet(false)}>
-                    <div className="bg-white w-full max-w-sm rounded-[2rem] overflow-hidden animate-in slide-in-from-bottom duration-400" onClick={e => e.stopPropagation()}>
-                        <div className="p-6 space-y-4">
-                            <h4 className="text-center font-black text-gray-400 uppercase text-[10px] tracking-widest mb-2">Video Settings</h4>
+                <div 
+                    className="fixed inset-0 z-[190] flex items-end justify-center bg-black/40 backdrop-blur-[2px] p-4 pb-[calc(52px+1.5rem+env(safe-area-inset-bottom))] animate-in fade-in duration-300" 
+                    onClick={() => setShowActionSheet(false)}
+                >
+                    <div className="bg-white w-full max-w-sm rounded-[2rem] overflow-hidden animate-in slide-in-from-bottom-10 duration-400 shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <div className="p-6 space-y-3">
+                            <h4 className="text-center font-black text-gray-400 uppercase text-[10px] tracking-widest mb-1">Video Options</h4>
+                            {isAuthor && (
+                                <>
+                                    <button 
+                                        onClick={() => { setShowActionSheet(false); setShowQuickEdit(true); }}
+                                        className="w-full py-4 flex items-center justify-center gap-3 bg-blue-50 text-blue-700 rounded-2xl font-bold transition-all active:scale-95"
+                                    >
+                                        <span className="material-symbols-outlined">edit_note</span>
+                                        Edit Title & Description
+                                    </button>
+                                    <button 
+                                        onClick={() => { setShowActionSheet(false); onDeleteVideo(video); }}
+                                        className="w-full py-4 flex items-center justify-center gap-3 bg-red-50 text-red-600 rounded-2xl font-bold transition-all active:scale-95"
+                                    >
+                                        <span className="material-symbols-outlined">delete</span>
+                                        Delete Permanently
+                                    </button>
+                                </>
+                            )}
+                            
                             <button 
-                                onClick={() => onNavigate(View.CreateVideo, { videoId: video.id })}
-                                className="w-full py-4 flex items-center justify-center gap-3 bg-blue-50 text-blue-700 rounded-2xl font-bold transition-all active:scale-95"
+                                onClick={() => { setShowActionSheet(false); setShowReportModal(true); }}
+                                className="w-full py-4 flex items-center justify-center gap-3 bg-gray-50 text-red-600 rounded-2xl font-bold transition-all active:scale-95"
                             >
-                                <span className="material-symbols-outlined">edit</span>
-                                Edit Video Details
+                                <span className="material-symbols-outlined">flag</span>
+                                Report Video
                             </button>
-                            <button 
-                                onClick={() => { setShowActionSheet(false); onDeleteVideo(video); }}
-                                className="w-full py-4 flex items-center justify-center gap-3 bg-red-50 text-red-600 rounded-2xl font-bold transition-all active:scale-95"
-                            >
-                                <span className="material-symbols-outlined">delete</span>
-                                Delete Permanently
-                            </button>
+
                             <button 
                                 onClick={() => setShowActionSheet(false)}
-                                className="w-full py-4 text-gray-500 font-bold transition-all active:scale-95"
+                                className="w-full py-4 text-gray-500 font-bold transition-all active:scale-95 bg-gray-100/50 rounded-2xl"
                             >
                                 Cancel
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Quick Edit Modal */}
+            {showQuickEdit && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-300" onClick={() => setShowQuickEdit(false)}>
+                    <div className="glass-card bg-white w-full max-w-md p-6 animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-xl font-black text-gray-800">Edit Details</h3>
+                            <button onClick={() => setShowQuickEdit(false)} className="p-1 text-gray-400 hover:text-gray-600"><span className="material-symbols-outlined">close</span></button>
+                        </div>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-1.5 ml-1">Video Title</label>
+                                <input 
+                                    value={editTitle} 
+                                    onChange={e => setEditTitle(e.target.value)} 
+                                    className="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium text-sm"
+                                    placeholder="Enter news title..."
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-1.5 ml-1">Description</label>
+                                <textarea 
+                                    value={editDescription} 
+                                    onChange={e => setEditDescription(e.target.value)} 
+                                    className="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium text-sm resize-none h-32"
+                                    placeholder="Add more details about this news..."
+                                />
+                            </div>
+                            <button 
+                                onClick={handleSaveChanges}
+                                disabled={isSavingChanges}
+                                className="w-full py-4 bg-blue-600 text-white rounded-xl font-black uppercase text-xs tracking-[0.2em] shadow-lg shadow-blue-100 active:scale-95 transition-all disabled:opacity-50"
+                            >
+                                {isSavingChanges ? 'Saving...' : 'Save Changes'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Public Report Modal */}
+            {showReportModal && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-300" onClick={() => setShowReportModal(false)}>
+                    <div className="glass-card bg-white w-full max-w-md p-6 animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+                         <div className="flex items-center gap-3 mb-6">
+                            <div className="p-2 bg-red-50 rounded-lg text-red-600"><span className="material-symbols-outlined">flag</span></div>
+                            <h3 className="text-xl font-black text-gray-800">Report News</h3>
+                        </div>
+                        <p className="text-xs text-gray-500 mb-4 font-medium italic">Why are you reporting this news video? Please be specific so our moderators can take action.</p>
+                        <div className="space-y-4">
+                            <textarea 
+                                value={reportReason} 
+                                onChange={e => setReportReason(e.target.value)} 
+                                className="w-full p-4 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-red-500 transition-all font-medium text-sm resize-none h-40"
+                                placeholder="Enter reason (e.g. Fake news, Violence, Hate speech...)"
+                                required
+                            />
+                            <div className="flex gap-3">
+                                <button 
+                                    onClick={() => setShowReportModal(false)}
+                                    className="flex-1 py-3 text-gray-500 font-bold text-sm"
+                                >
+                                    Cancel
+                                </button>
+                                <button 
+                                    onClick={handleSubmitReport}
+                                    disabled={isSubmittingReport || !reportReason.trim()}
+                                    className="flex-[2] py-3 bg-red-600 text-white rounded-xl font-black uppercase text-xs tracking-widest shadow-lg shadow-red-100 active:scale-95 transition-all disabled:opacity-50"
+                                >
+                                    {isSubmittingReport ? 'Submitting...' : 'Submit Report'}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

@@ -1,8 +1,7 @@
-
 {
   "name": "Public Tak",
   "short_name": "Public Tak",
-  "description": "Your trusted source for hyper-local news, breaking updates, politics, sports, and entertainment from across India.",
+  "description": "पब्लिक तक: आपके क्षेत्र की हर छोटी-बड़ी खबर! Latest local news articles and videos with daily updates from every block and district in India.",
   "id": "com.publictak.app",
   "start_url": "/?source=pwa",
   "display": "standalone",
